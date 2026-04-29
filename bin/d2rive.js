@@ -1,5 +1,9 @@
 #!/usr/bin/env node
-import { createAndMount, connectAndMount, unmount, shareFolder, cacheInfo, cacheClear } from '../src/mount.js'
+import {
+  createAndMount, connectAndMount, unmount,
+  shareFolder, pullFile, driveInfo,
+  cacheInfo, cacheClear, fmtBytes
+} from '../src/mount.js'
 
 const [,, cmd, ...args] = process.argv
 
@@ -32,14 +36,37 @@ const commands = {
     console.log(`Unmounted ${mountpoint}`)
   },
 
+  async pull() {
+    const [key, remotePath, localPath] = args
+    if (!key || !remotePath || !localPath) usage()
+    await pullFile(key, remotePath, localPath)
+  },
+
+  async info() {
+    const [key] = args
+    if (!key) usage()
+    const files = await driveInfo(key)
+    if (!files.length) { console.log('Drive is empty'); return }
+    let total = 0
+    for (const { path, size } of files) {
+      console.log(`${fmtBytes(size).padStart(9)}  ${path}`)
+      total += size
+    }
+    console.log(`─────────────────`)
+    console.log(`${fmtBytes(total).padStart(9)}  ${files.length} files`)
+  },
+
   async cache() {
     const [sub, key] = args
     if (!sub || sub === 'info') {
       const list = await cacheInfo(key)
       if (!list.length) { console.log('No cache found'); return }
+      let total = 0
       for (const { key, size, dir } of list) {
-        console.log(`${key.slice(0, 20)}...  ${fmtBytes(size).padStart(8)}  ${dir}`)
+        console.log(`${fmtBytes(size).padStart(9)}  ${key.slice(0, 20)}...  ${dir}`)
+        total += size
       }
+      console.log(`Total: ${fmtBytes(total)}`)
     } else if (sub === 'clear') {
       await cacheClear(key)
       console.log(key ? `Cleared cache for ${key.slice(0, 20)}...` : 'Cleared all caches')
@@ -61,21 +88,19 @@ function onExit(cleanup) {
   })
 }
 
-function fmtBytes(n) {
-  if (n < 1024) return `${n} B`
-  if (n < 1024 ** 2) return `${(n / 1024).toFixed(1)} KB`
-  if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MB`
-  return `${(n / 1024 ** 3).toFixed(2)} GB`
-}
-
 function usage() {
   console.error(`Usage:
-  d2rive share <folder>                Share a local folder (prints key)
-  d2rive create <mountpoint>           Create a new empty drive and mount it
-  d2rive mount <key> <mountpoint>      Mount a remote drive by key
-  d2rive unmount <mountpoint>          Unmount
+  d2rive share <folder>                    Share a local folder (syncs + watches)
+  d2rive create <mountpoint>               Create a new empty drive and mount it
+  d2rive mount <key> <mountpoint>          Mount a remote drive by key
+  d2rive unmount <mountpoint>              Unmount
 
-  d2rive cache info [key]              Show cache size
-  d2rive cache clear [key]             Delete cache (all or by key)`)
+  d2rive pull <key> <remote> <local>       Download a single file from a drive
+  d2rive info <key>                        List files and sizes in a drive
+
+  d2rive cache info [key]                  Show local cache size
+  d2rive cache clear [key]                 Delete cache (all or by key)
+
+  Place a .d2riveignore file in the shared folder to exclude files/dirs.`)
   process.exit(1)
 }
