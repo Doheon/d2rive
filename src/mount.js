@@ -339,7 +339,8 @@ async function doMount(drive, mountpoint, name) {
 
   async function getStat(path) {
     if (path === '/') return statObj(true)
-    const entry = await drive.entry(path)
+    const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000))
+    const entry = await Promise.race([drive.entry(path), timeout])
     if (entry) return statObj(false, entry.value?.blob?.byteLength ?? 0)
     for await (const _ of drive.list(path)) return statObj(true)
     return null
@@ -380,7 +381,8 @@ async function doMount(drive, mountpoint, name) {
     },
 
     read(path, fd, buf, len, pos, cb) {
-      drive.get(path)
+      const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000))
+      Promise.race([drive.get(path), timeout])
         .then(data => {
           if (!data || pos >= data.length) return cb(0)
           const slice = data.slice(pos, pos + len)
