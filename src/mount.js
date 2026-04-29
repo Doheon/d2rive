@@ -5,7 +5,7 @@ import Fuse from 'fuse-native'
 import Localdrive from 'localdrive'
 import picomatch from 'picomatch'
 import { homedir } from 'os'
-import { join, dirname } from 'path'
+import { join, dirname, basename } from 'path'
 import { mkdir, readdir, readFile, writeFile, stat, rm } from 'fs/promises'
 import b4a from 'b4a'
 
@@ -19,8 +19,19 @@ async function setupDrive(key) {
   const drive = new Hyperdrive(store, key)
   await drive.ready()
 
+  if (key) {
+    writeFile(join(dir, '.lastaccess'), Date.now().toString()).catch(() => {})
+  }
+
   const swarm = new Hyperswarm()
-  swarm.on('connection', conn => store.replicate(conn))
+  swarm.on('connection', conn => {
+    store.replicate(conn)
+    conn.on('close', () => {
+      if (swarm.connections.size === 0) {
+        console.log('\nLost connection to all peers. Reconnecting...')
+      }
+    })
+  })
 
   return { drive, store, swarm }
 }
@@ -56,7 +67,7 @@ export async function createAndMount(mountpoint) {
   console.log(`Drive key: ${key}`)
   console.log(`Share this key: d2rive mount ${key} <mountpoint>`)
 
-  const fuse = await doMount(drive, mountpoint)
+  const fuse = await doMount(drive, mountpoint, basename(mountpoint))
 
   return { key, cleanup: makeCleanup(fuse, swarm, drive, store) }
 }
@@ -67,7 +78,7 @@ export async function connectAndMount(keyHex, mountpoint) {
 
   await connectToPeers(drive, swarm)
 
-  const fuse = await doMount(drive, mountpoint)
+  const fuse = await doMount(drive, mountpoint, basename(mountpoint))
 
   return { cleanup: makeCleanup(fuse, swarm, drive, store) }
 }
@@ -135,6 +146,38 @@ export function unmount(mountpoint) {
   )
 }
 
+export async function syncFromDrive(keyHex, localPath) {
+  const key = b4a.from(keyHex, 'hex')
+  const { drive, store, swarm } = await setupDrive(key)
+  await connectToPeers(drive, swarm)
+
+  const files = []
+  for await (const entry of drive.list('/')) {
+    if (entry.key.endsWith('/.keep')) continue
+    files.push(entry.key)
+  }
+
+  const total = files.length
+  let done = 0, bytes = 0
+  for (const filePath of files) {
+    const data = await drive.get(filePath)
+    if (data) {
+      const dest = join(localPath, filePath)
+      await mkdir(dirname(dest), { recursive: true })
+      await writeFile(dest, data)
+      bytes += data.byteLength
+    }
+    done++
+    process.stdout.write(`\r  [${done}/${total}] ${filePath.slice(0, 50)}`)
+  }
+  if (total > 0) process.stdout.write('\r\x1b[K')
+  console.log(`Synced ${total} files (${fmtBytes(bytes)}) → ${localPath}`)
+
+  await swarm.destroy()
+  await drive.close()
+  await store.close()
+}
+
 // ── Cache management ──────────────────────────────────────────────────────────
 
 export async function cacheInfo(keyHex) {
@@ -148,7 +191,9 @@ export async function cacheInfo(keyHex) {
     if (!e.isDirectory()) continue
     const dir = join(base, e.name)
     const size = await dirSize(dir)
-    results.push({ key: e.name, size, dir })
+    const ts = await readFile(join(dir, '.lastaccess'), 'utf8').catch(() => null)
+    const lastAccessDays = ts ? Math.floor((Date.now() - Number(ts)) / 86400000) : null
+    results.push({ key: e.name, size, dir, lastAccessDays })
   }
   return results
 }
@@ -268,7 +313,7 @@ export function fmtBytes(n) {
 
 // ── FUSE mount ────────────────────────────────────────────────────────────────
 
-async function doMount(drive, mountpoint) {
+async function doMount(drive, mountpoint, name) {
   await mkdir(mountpoint, { recursive: true })
 
   let fdSeq = 0
@@ -433,7 +478,8 @@ async function doMount(drive, mountpoint) {
     }
   }
 
-  const fuse = new Fuse(mountpoint, handlers, { force: true, mkdir: true })
+  const volname = name || basename(mountpoint)
+  const fuse = new Fuse(mountpoint, handlers, { force: true, mkdir: true, volname })
   await new Promise((res, rej) => fuse.mount(err => err ? rej(err) : res()))
   console.log(`Mounted at ${mountpoint}`)
 
