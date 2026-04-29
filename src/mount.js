@@ -24,10 +24,16 @@ async function setupDrive(key) {
   }
 
   const swarm = new Hyperswarm()
+  let wasDisconnected = false
   swarm.on('connection', conn => {
+    if (wasDisconnected) {
+      console.log('\nReconnected to peer.')
+      wasDisconnected = false
+    }
     store.replicate(conn)
     conn.on('close', () => {
       if (swarm.connections.size === 0) {
+        wasDisconnected = true
         console.log('\nLost connection to all peers. Reconnecting...')
       }
     })
