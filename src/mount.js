@@ -175,8 +175,8 @@ async function syncToDrive(local, drive, ignore) {
   let done = 0
 
   for (const entry of entries) {
-    const buf = await local.get(entry.key)
-    const localSize = buf?.byteLength ?? 0
+    const buf = (await local.get(entry.key)) ?? Buffer.alloc(0)
+    const localSize = buf.byteLength
     const driveEntry = await drive.entry(entry.key)
     const driveSize = driveEntry?.value?.blob?.byteLength ?? -1
 
