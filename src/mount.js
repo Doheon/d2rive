@@ -484,8 +484,10 @@ async function doMount(drive, mountpoint, name) {
     }
   }
 
-  const volname = name || basename(mountpoint)
-  const fuse = new Fuse(mountpoint, handlers, { force: true, mkdir: true, volname })
+  const fuse = new Fuse(mountpoint, handlers, {
+    force: true, mkdir: true,
+    displayFolder: true, name: name || basename(mountpoint)
+  })
   await new Promise((res, rej) => fuse.mount(err => err ? rej(err) : res()))
   console.log(`Mounted at ${mountpoint}`)
 
