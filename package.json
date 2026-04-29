@@ -2,6 +2,7 @@
   "name": "d2rive",
   "version": "0.1.0",
   "description": "Mount remote Hyperdrive folders locally via FUSE",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "d2rive": "bin/d2rive.js"
