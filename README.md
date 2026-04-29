@@ -58,7 +58,9 @@ d2rive mount <key> <mountpoint>
 d2rive mount a1b2c3d4... ~/mnt
 ```
 
-The remote folder appears at `~/mnt`. Read and write operations go through to the Hyperdrive. If the peer goes offline, cached files remain accessible and reconnection is automatic.
+The remote folder appears at `~/mnt`. The mount is **read-only** — the drive is owned by the sharer and only they can write to it.
+
+Server-side changes are reflected on the client within ~2 seconds automatically. If the peer goes offline, cached files remain accessible and the client reconnects automatically when the server comes back online.
 
 ---
 
