@@ -8,6 +8,7 @@
     "d2rive": "bin/d2rive.js"
   },
   "scripts": {
+    "test": "node --test test/index.test.js",
     "postinstall": "bash scripts/patch-fuse.sh"
   },
   "dependencies": {

@@ -6,6 +6,12 @@ import {
 } from '../src/mount.js'
 import { saveDrive, removeDrive, listDrives, resolveKey } from '../src/drives.js'
 
+if (process.platform === 'win32') {
+  console.error('Windows is not yet supported. FUSE on Windows requires WinFsp (https://winfsp.dev).')
+  console.error('Contributions welcome — see CONTRIBUTING.md')
+  process.exit(1)
+}
+
 const [,, cmd, ...args] = process.argv
 
 const commands = {

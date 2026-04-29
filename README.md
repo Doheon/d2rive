@@ -4,8 +4,15 @@ P2P remote folder mounting over [Hyperdrive](https://github.com/holepunchto/hype
 
 ## Requirements
 
-- **macOS** with [macFUSE](https://osxfuse.github.io/) installed
-- **Node.js** 18+
+**macOS**
+- [macFUSE](https://osxfuse.github.io/) 4.x or later
+
+**Linux**
+- libfuse2: `sudo apt-get install libfuse2` (Ubuntu/Debian) or `sudo dnf install fuse-libs` (Fedora)
+- May require adding your user to the `fuse` group: `sudo usermod -aG fuse $USER`
+
+**Both**
+- Node.js 18+
 
 ## Install
 

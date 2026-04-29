@@ -1,8 +1,8 @@
 import { homedir } from 'os'
-import { join } from 'path'
+import { dirname, join } from 'path'
 import { mkdir, readFile, writeFile } from 'fs/promises'
 
-const drivesPath = () => join(homedir(), '.d2rive', 'drives.json')
+const drivesPath = () => process.env.D2RIVE_DRIVES_FILE || join(homedir(), '.d2rive', 'drives.json')
 
 async function readDrives() {
   try {
@@ -15,7 +15,7 @@ async function readDrives() {
 
 async function writeDrives(data) {
   const p = drivesPath()
-  await mkdir(join(homedir(), '.d2rive'), { recursive: true })
+  await mkdir(dirname(p), { recursive: true })
   await writeFile(p, JSON.stringify(data, null, 2))
 }
 

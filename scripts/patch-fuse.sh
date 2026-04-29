@@ -1,8 +1,39 @@
 #!/bin/bash
 # Patches fuse-native to use the system macFUSE library on macOS arm64
+# On Linux, verifies that libfuse2 is installed.
 
 PLATFORM=$(uname -s)
 ARCH=$(uname -m)
+
+if [ "$PLATFORM" = "Linux" ]; then
+  FOUND=0
+  if command -v ldconfig >/dev/null 2>&1 && ldconfig -p 2>/dev/null | grep -q 'libfuse\.so\.2'; then
+    FOUND=1
+  fi
+  for candidate in \
+    /usr/lib/x86_64-linux-gnu/libfuse.so.2 \
+    /usr/lib/aarch64-linux-gnu/libfuse.so.2 \
+    /usr/lib64/libfuse.so.2 \
+    /usr/lib/libfuse.so.2 \
+    /lib/x86_64-linux-gnu/libfuse.so.2 \
+    /lib/aarch64-linux-gnu/libfuse.so.2; do
+    if [ -f "$candidate" ]; then
+      FOUND=1
+      break
+    fi
+  done
+
+  if [ "$FOUND" -ne 1 ]; then
+    echo "patch-fuse: on Linux, install libfuse2 first:"
+    echo "  Ubuntu/Debian: sudo apt-get install libfuse2"
+    echo "  Fedora/RHEL:   sudo dnf install fuse-libs"
+    echo "  Arch:          sudo pacman -S fuse2"
+    exit 1
+  fi
+
+  echo "patch-fuse: Linux detected, libfuse2 found — no patching needed"
+  exit 0
+fi
 
 if [ "$PLATFORM" != "Darwin" ] || [ "$ARCH" != "arm64" ]; then
   echo "patch-fuse: skipping (not macOS arm64)"

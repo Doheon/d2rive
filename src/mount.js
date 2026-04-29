@@ -16,9 +16,14 @@ async function setupDrive(key) {
   const keyHex = key ? b4a.toString(key, 'hex') : `new-${Date.now()}`
   const dir = join(homedir(), '.d2rive', keyHex)
 
-  const store = new Corestore(dir)
-  const drive = new Hyperdrive(store, key)
-  await drive.ready()
+  let store, drive
+  try {
+    store = new Corestore(dir)
+    drive = new Hyperdrive(store, key)
+    await drive.ready()
+  } catch (err) {
+    throw new Error(`Failed to open drive store at ${dir}: ${err.message}`)
+  }
 
   if (key) {
     writeFile(join(dir, '.lastaccess'), Date.now().toString()).catch(() => {})
@@ -46,12 +51,14 @@ async function setupDrive(key) {
 async function connectToPeers(drive, swarm) {
   swarm.join(drive.discoveryKey)
   process.stdout.write('Connecting to peers...')
+  let connected = false
   await Promise.race([
-    new Promise(res => swarm.once('connection', () => setTimeout(res, 400))),
+    new Promise(res => swarm.once('connection', () => { connected = true; setTimeout(res, 400) })),
     new Promise(res => setTimeout(res, 10000))
   ])
+  if (!connected) console.log('\nWarning: No peers found within 10s — drive may be offline or key may be wrong.')
   try { await drive.update() } catch {}
-  console.log(' ready')
+  if (connected) console.log(' ready')
 }
 
 function makeCleanup(fuse, swarm, drive, store) {
@@ -187,7 +194,8 @@ export async function syncFromDrive(keyHex, localPath) {
     process.stdout.write(`\r  [${done}/${total}] ${filePath.slice(0, 50)}`)
   }
   if (total > 0) process.stdout.write('\r\x1b[K')
-  console.log(`Synced ${total} files (${fmtBytes(bytes)}) → ${localPath}`)
+  if (total === 0) console.log('Drive is empty or no files visible.')
+  else console.log(`Synced ${total} files (${fmtBytes(bytes)}) → ${localPath}`)
 
   await swarm.destroy()
   await drive.close()
@@ -300,7 +308,7 @@ async function loadIgnore(folderPath) {
   }
 }
 
-function makeIgnoreMatcher(patterns) {
+export function makeIgnoreMatcher(patterns) {
   if (!patterns.length) return () => false
 
   // Expand patterns so bare names match both the entry and everything under it
@@ -416,7 +424,10 @@ async function doMount(drive, mountpoint, name, writable = true) {
           slice.copy(buf)
           cb(slice.length)
         })
-        .catch(() => cb(Fuse.EIO))
+        .catch(err => {
+          if (err.message === 'timeout') process.stderr.write(`\nRead timeout: ${path} — peer may be offline\n`)
+          cb(Fuse.EIO)
+        })
     },
 
     write(path, fd, buf, len, pos, cb) {
