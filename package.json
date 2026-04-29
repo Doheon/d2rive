@@ -16,6 +16,7 @@
     "hyperdrive": "^11.11.0",
     "hyperswarm": "^4.8.4",
     "localdrive": "^2.2.1",
-    "mirror-drive": "^1.14.2"
+    "mirror-drive": "^1.14.2",
+    "picomatch": "^4.0.4"
   }
 }
