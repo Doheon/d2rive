@@ -77,7 +77,7 @@ async function loadLibs() {
   drivesLib = await import(path.resolve(__dirname, '../../src/drives.js'))
 }
 
-function spawnD2rive(args, { onLine, onExit } = {}) {
+function spawnD2rive(args, { onLine, onStderr, onExit } = {}) {
   const child = spawn(NODE, [BIN, ...args], { env: { ...process.env } })
 
   let buf = ''
@@ -98,6 +98,7 @@ function spawnD2rive(args, { onLine, onExit } = {}) {
       if (!line.trim()) continue
       const win = mounts.getWindow()
       if (win && !win.isDestroyed()) win.webContents.send('log:line', { text: line, level: 'error' })
+      if (onStderr) onStderr(line)
     }
   })
 
@@ -230,6 +231,7 @@ function registerIPC() {
   ipcMain.handle('drive:watch', async (_, { keyHex, localFolder }) => {
     return new Promise((resolve) => {
       let done = false
+      let stderrLines = []
       const child = spawnD2rive(['watch', keyHex, localFolder], {
         onLine(line) {
           if (done) {
@@ -245,11 +247,14 @@ function registerIPC() {
             })
             resolve({ ok: true })
           }
-          if (line.toLowerCase().includes('error')) { done = true; resolve({ error: line }) }
         },
+        onStderr(line) { if (!done) stderrLines.push(line) },
         onExit(code) {
-          if (!done) { done = true; resolve({ error: `Process exited (code ${code})` }) }
-          else mounts.setStatus(localFolder, 'disconnected')
+          if (!done) {
+            done = true
+            const detail = stderrLines.join(' ').trim()
+            resolve({ error: detail || `Process exited (code ${code})` })
+          } else mounts.setStatus(localFolder, 'disconnected')
         }
       })
       setTimeout(() => {

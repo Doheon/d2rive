@@ -156,6 +156,7 @@ document.getElementById('btn-save-key').addEventListener('click', async () => {
 function friendlyError(err) {
   if (err.includes('ENOENT')) return 'Folder not found — please select a valid folder'
   if (err.includes('EACCES') || err.includes('EPERM')) return 'Permission denied'
+  if (err.includes('LOCK') || err.includes('already in use')) return 'Drive already open — stop the existing session first'
   if (err.includes('code 1')) return 'Failed to start — check the key and folder'
   return err
 }
