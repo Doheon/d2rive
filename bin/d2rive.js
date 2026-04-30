@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import {
-  shareFolder, watchDrive, pullFile, driveInfo,
+  pullFile, driveInfo,
   cacheInfo, cacheClear, fmtBytes, syncFromDrive
 } from '../src/mount.js'
 import { createSync, joinSync } from '../src/sync.js'
@@ -21,23 +21,18 @@ const commands = {
     const cleanArgs = args.filter(a => a !== '--write')
     const [folderPath] = cleanArgs
     if (!folderPath) usage()
-    const { cleanup } = await shareFolder(folderPath, { writable })
+    const { cleanup } = await createSync(folderPath, { writable })
     onExit(cleanup)
   },
 
   async watch() {
-    const clean = args.includes('--clean')
     const cleanArgs = args.filter(a => a !== '--clean')
     const [keyOrName, localFolder] = cleanArgs
     if (!keyOrName || !localFolder) usage()
     const key = await resolveKey(keyOrName)
-    if (key.startsWith('sync:')) {
-      const { cleanup } = await joinSync(key.slice(5), localFolder)
-      onExit(cleanup)
-    } else {
-      const { cleanup } = await watchDrive(key, localFolder, { clean })
-      onExit(cleanup)
-    }
+    const rawKey = key.startsWith('sync:') ? key.slice(5) : key
+    const { cleanup } = await joinSync(rawKey, localFolder)
+    onExit(cleanup)
   },
 
   async pull() {

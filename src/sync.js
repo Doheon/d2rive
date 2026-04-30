@@ -20,7 +20,14 @@ async function apply(nodes, view, host) {
   for (const node of nodes) {
     try {
       const op = JSON.parse(node.value.toString())
+      if (op.type === 'config') {
+        await view.put('/.d2rive-config', { writable: op.writable })
+        continue
+      }
       if (op.type === 'add-writer') {
+        // Check config — if writable=false, ignore add-writer requests
+        const cfg = await view.get('/.d2rive-config').catch(() => null)
+        if (cfg && cfg.value.writable === false) continue
         if (b4a.equals(node.from.key, b4a.from(op.key, 'hex'))) {
           await host.ackWriter(node.from.key)
           await host.addWriter(node.from.key, { indexer: false })
@@ -73,6 +80,8 @@ async function readChunked(store, coreKey, startSeq, numChunks) {
 
 async function syncViewToLocal(view, store, localFolder, writingFiles, log) {
   for await (const { key: filePath, value } of view.createReadStream()) {
+    // Skip internal config entries (no coreKey means not a file)
+    if (!value.coreKey) continue
     const localPath = join(localFolder, filePath)
     try {
       const s = await stat(localPath)
@@ -149,7 +158,7 @@ function startLocalWatcher(folderPath, base, dataCore, view, writingFiles, log) 
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export async function createSync(folderPath, { onLog, onStatus } = {}) {
+export async function createSync(folderPath, { writable = true, onLog, onStatus } = {}) {
   const log = (t) => { console.log(t); if (onLog) onLog(t) }
   const storageDir = join(homedir(), '.d2rive', 'sync-' + Date.now())
   const store = new Corestore(storageDir)
@@ -158,6 +167,9 @@ export async function createSync(folderPath, { onLog, onStatus } = {}) {
 
   const base = new Autobase(store, null, { open: openView, apply, optimistic: true })
   await base.ready()
+
+  // Append config as first block so joiners know the writable policy
+  await base.append(JSON.stringify({ type: 'config', writable }))
 
   const key = base.key.toString('hex')
   log(`Sync key: ${key}`)
@@ -185,7 +197,7 @@ export async function createSync(folderPath, { onLog, onStatus } = {}) {
   base.on('update', () => syncViewToLocal(base.view, store, folderPath, writingFiles, log).catch(() => {}))
   const watcher = startLocalWatcher(folderPath, base, dataCore, base.view, writingFiles, log)
 
-  log(`Running... (syncing ${folderPath})`)
+  log(`Running... (${writable ? 'writable' : 'read-only'})`)
 
   return {
     key,
@@ -209,56 +221,79 @@ export async function joinSync(keyHex, localFolder, { onLog, onStatus } = {}) {
   const base = new Autobase(store, bootstrapKey, { open: openView, apply, optimistic: true })
   await base.ready()
 
-  await base.append(JSON.stringify({
-    type: 'add-writer',
-    key: base.local.key.toString('hex')
-  }), { optimistic: true })
-
   const writingFiles = new Set()
   const swarm = new Hyperswarm()
   let wasDisconnected = false
+  let disconnectTimer = null
+
   swarm.on('connection', conn => {
+    if (disconnectTimer) { clearTimeout(disconnectTimer); disconnectTimer = null }
     if (wasDisconnected) { log('Reconnected.'); wasDisconnected = false }
     base.replicate(conn)
     conn.on('close', () => {
       if (swarm.connections.size === 0) {
         wasDisconnected = true
         log('Lost connection to all peers. Reconnecting...')
+        disconnectTimer = setTimeout(() => process.exit(0), 30000)
       }
     })
   })
+
   swarm.join(base.discoveryKey, { server: true, client: true })
   if (onStatus) onStatus('connecting')
 
-  log('Waiting to become writer...')
-  if (!base.writable) {
-    await new Promise((resolve) => {
-      const t = setTimeout(() => { base.removeAllListeners('writable'); resolve() }, 20000)
-      base.once('writable', () => { clearTimeout(t); resolve() })
-    })
+  // Wait for initial peer connection (max 10s), then do initial sync
+  await new Promise(resolve => {
+    const t = setTimeout(resolve, 10000)
+    swarm.once('connection', () => { clearTimeout(t); resolve() })
+  })
+
+  try { await base.update({ timeout: 3000 }) } catch {}
+
+  // Read config to determine writable policy
+  const cfg = await base.view.get('/.d2rive-config').catch(() => null)
+  const isWritable = cfg ? (cfg.value.writable !== false) : true
+
+  await mkdir(localFolder, { recursive: true })
+
+  if (isWritable) {
+    // Request writer access and wait for approval (max 20s)
+    await base.append(JSON.stringify({
+      type: 'add-writer',
+      key: base.local.key.toString('hex')
+    }), { optimistic: true })
+
+    log('Waiting to become writer...')
+    if (!base.writable) {
+      await new Promise((resolve) => {
+        const t = setTimeout(() => { base.removeAllListeners('writable'); resolve() }, 20000)
+        base.once('writable', () => { clearTimeout(t); resolve() })
+      })
+    }
   }
 
   if (onStatus) onStatus('connected')
-  await mkdir(localFolder, { recursive: true })
 
   log('Initial sync...')
   await syncViewToLocal(base.view, store, localFolder, writingFiles, log)
 
+  let watcher = null
   if (base.writable) {
     const count = await uploadLocalFiles(localFolder, base, dataCore, base.view, log)
     log(`Initial sync: ↑${count} file(s)`)
+    watcher = startLocalWatcher(localFolder, base, dataCore, base.view, writingFiles, log)
   }
 
   base.on('update', () => {
     syncViewToLocal(base.view, store, localFolder, writingFiles, log).catch(() => {})
   })
-  const watcher = startLocalWatcher(localFolder, base, dataCore, base.view, writingFiles, log)
 
-  log(`Running... (syncing ${localFolder})`)
+  log(`Running... (${base.writable ? 'writable' : 'read-only'})`)
 
   return {
     cleanup: async () => {
-      try { watcher.close() } catch {}
+      if (disconnectTimer) clearTimeout(disconnectTimer)
+      if (watcher) try { watcher.close() } catch {}
       try { await swarm.destroy() } catch {}
       try { await base.close() } catch {}
       try { await store.close() } catch {}

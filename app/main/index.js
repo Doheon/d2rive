@@ -61,7 +61,7 @@ function discoverMounts() {
         const localFolder = parts[cmdIdx + 3]
         if (!key || !localFolder || !/^[0-9a-f]{64}$/i.test(key)) continue
         if (mounts.getAllMounts().find(m => m.mountpoint === localFolder)) continue
-        mounts.addMount({ mountpoint: localFolder, key, type: 'watch', status: 'connected',
+        mounts.addMount({ mountpoint: localFolder, key, type: 'sync', status: 'connected',
           cleanup: makeCleanupByPid(pid) })
       } else if (cmd === 'share') {
         const rest = parts.slice(cmdIdx + 2)
@@ -69,7 +69,7 @@ function discoverMounts() {
         const folderPath = rest.find(p => !p.startsWith('-'))
         if (!folderPath) continue
         if (mounts.getAllMounts().find(m => m.mountpoint === folderPath)) continue
-        mounts.addMount({ mountpoint: folderPath, key: '', type: 'share', status: 'connected', writable,
+        mounts.addMount({ mountpoint: folderPath, key: '', type: writable ? 'sync' : 'share', status: 'connected', writable,
           cleanup: makeCleanupByPid(pid) })
       } else if (cmd === 'sync-create') {
         const rest = parts.slice(cmdIdx + 2)
@@ -217,48 +217,21 @@ function registerIPC() {
   })
 
   ipcMain.handle('drive:share-folder', async (_, { folderPath, writable }) => {
-    if (writable) {
-      // Writable share → bidirectional sync via Autobase
-      return new Promise((resolve) => {
-        let done = false
-        const child = spawnD2rive(['sync-create', folderPath], {
-          onLine(line) {
-            if (done) {
-              if (line.includes('Lost connection')) mounts.setStatus(folderPath, 'disconnected')
-              else if (line.includes('Reconnected')) mounts.setStatus(folderPath, 'connected')
-              return
-            }
-            const m = line.match(/Sync key:\s+([0-9a-f]{64})/i)
-            if (m) {
-              done = true
-              const key = 'sync:' + m[1]
-              mounts.addMount({ mountpoint: folderPath, key, type: 'sync', status: 'connected', writable: true, cleanup: makeCleanup(child) })
-              resolve({ key })
-            }
-          },
-          onExit(code) {
-            if (!done) { done = true; resolve({ error: `Process exited (code ${code})` }) }
-            else mounts.removeMount(folderPath)
-          }
-        })
-        setTimeout(() => { if (!done) { done = true; resolve({ error: 'Timed out waiting for sync key' }) } }, 30000)
-      })
-    }
-    // Read-only share → Hyperdrive one-way
+    const spawnArgs = writable ? ['share', '--write', folderPath] : ['share', folderPath]
     return new Promise((resolve) => {
       let done = false
-      const child = spawnD2rive(['share', folderPath], {
+      const child = spawnD2rive(spawnArgs, {
         onLine(line) {
           if (done) {
             if (line.includes('Lost connection')) mounts.setStatus(folderPath, 'disconnected')
             else if (line.includes('Reconnected')) mounts.setStatus(folderPath, 'connected')
             return
           }
-          const m = line.match(/Drive key:\s+([0-9a-f]{64})/i)
+          const m = line.match(/Sync key:\s+([0-9a-f]{64})/i)
           if (m) {
             done = true
-            const key = m[1]
-            mounts.addMount({ mountpoint: folderPath, key, type: 'share', status: 'connected', writable: false, cleanup: makeCleanup(child) })
+            const key = 'sync:' + m[1]
+            mounts.addMount({ mountpoint: folderPath, key, type: writable ? 'sync' : 'share', status: 'connected', writable: !!writable, cleanup: makeCleanup(child) })
             resolve({ key })
           }
         },
@@ -267,63 +240,26 @@ function registerIPC() {
           else mounts.removeMount(folderPath)
         }
       })
-      setTimeout(() => { if (!done) { done = true; resolve({ error: 'Timed out waiting for drive key' }) } }, 30000)
+      setTimeout(() => { if (!done) { done = true; resolve({ error: 'Timed out waiting for sync key' }) } }, 30000)
     })
   })
 
-  ipcMain.handle('drive:watch', async (_, { keyHex, localFolder, clean }) => {
-    if (keyHex.startsWith('sync:')) {
-      // Sync key → bidirectional join
-      const rawKey = keyHex.slice(5)
-      return new Promise((resolve) => {
-        let done = false
-        let stderrLines = []
-        const args = ['sync-join', rawKey, localFolder]
-        const child = spawnD2rive(args, {
-          onLine(line) {
-            if (done) {
-              if (line.includes('Lost connection')) mounts.setStatus(localFolder, 'disconnected')
-              else if (line.includes('Reconnected')) mounts.setStatus(localFolder, 'connected')
-              return
-            }
-            if (line.includes('Running...')) {
-              done = true
-              mounts.addMount({ mountpoint: localFolder, key: keyHex, type: 'sync', status: 'connected', writable: true, cleanup: makeCleanup(child) })
-              resolve({ ok: true })
-            }
-          },
-          onStderr(line) { if (!done) stderrLines.push(line) },
-          onExit(code) {
-            if (!done) { done = true; resolve({ error: stderrLines.join(' ').trim() || `Process exited (code ${code})` }) }
-            else mounts.removeMount(localFolder)
-          }
-        })
-        setTimeout(() => {
-          if (!done) {
-            done = true
-            mounts.addMount({ mountpoint: localFolder, key: keyHex, type: 'sync', status: 'connecting', writable: true, cleanup: makeCleanup(child) })
-            resolve({ ok: true })
-          }
-        }, 25000)
-      })
-    }
-    // Regular key → one-way Hyperdrive watch
+  ipcMain.handle('drive:watch', async (_, { keyHex, localFolder }) => {
+    const rawKey = keyHex.startsWith('sync:') ? keyHex.slice(5) : keyHex
     return new Promise((resolve) => {
       let done = false
       let stderrLines = []
-      let watchWritable = false
-      const watchArgs = clean ? ['watch', '--clean', keyHex, localFolder] : ['watch', keyHex, localFolder]
-      const child = spawnD2rive(watchArgs, {
+      const child = spawnD2rive(['watch', rawKey, localFolder], {
         onLine(line) {
           if (done) {
             if (line.includes('Lost connection')) mounts.setStatus(localFolder, 'disconnected')
             else if (line.includes('Reconnected')) mounts.setStatus(localFolder, 'connected')
             return
           }
-          if (line.includes('Initial sync...')) watchWritable = line.includes('writable')
           if (line.includes('Running...')) {
             done = true
-            mounts.addMount({ mountpoint: localFolder, key: keyHex, type: 'watch', status: 'connected', writable: watchWritable, cleanup: makeCleanup(child) })
+            const isWritable = line.includes('writable')
+            mounts.addMount({ mountpoint: localFolder, key: keyHex, type: 'sync', status: 'connected', writable: isWritable, cleanup: makeCleanup(child) })
             resolve({ ok: true })
           }
         },
@@ -336,10 +272,10 @@ function registerIPC() {
       setTimeout(() => {
         if (!done) {
           done = true
-          mounts.addMount({ mountpoint: localFolder, key: keyHex, type: 'watch', status: 'connecting', cleanup: makeCleanup(child) })
+          mounts.addMount({ mountpoint: localFolder, key: keyHex, type: 'sync', status: 'connecting', cleanup: makeCleanup(child) })
           resolve({ ok: true })
         }
-      }, 20000)
+      }, 25000)
     })
   })
 
