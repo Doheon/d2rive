@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>d2rive</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>d2rive</h1>
+    </header>
+
+    <section id="active-section">
+      <div class="section-title">Active Mounts</div>
+      <div id="mounts-list"><div class="empty-hint">No active mounts</div></div>
+    </section>
+
+    <section id="actions-section">
+      <button id="btn-share" class="btn-primary">Share Folder</button>
+      <button id="btn-mount" class="btn-primary">Mount Drive</button>
+    </section>
+
+    <!-- Share result card (hidden initially) -->
+    <div id="share-card" class="card hidden">
+      <div class="card-label">Drive Key &mdash; share this:</div>
+      <div class="key-row">
+        <code id="share-key-text"></code>
+        <button id="btn-copy-key" class="btn-small">Copy</button>
+      </div>
+    </div>
+
+    <!-- Mount input panel (hidden initially) -->
+    <div id="mount-panel" class="card hidden">
+      <div class="card-label">Drive Key:</div>
+      <input id="key-input" type="text" placeholder="64-character hex key" spellcheck="false">
+      <div id="mount-path-row">
+        <span id="mount-path-label" class="path-hint">No folder selected</span>
+        <button id="btn-pick-folder" class="btn-small">Select Folder&hellip;</button>
+      </div>
+      <div class="btn-row">
+        <button id="btn-connect" class="btn-primary" disabled>Connect</button>
+        <button id="btn-cancel-mount" class="btn-secondary">Cancel</button>
+      </div>
+      <div id="mount-status-msg"></div>
+    </div>
+
+    <section id="saved-section">
+      <div class="section-title">Saved Drives</div>
+      <div id="saved-list"><div class="empty-hint">No saved drives</div></div>
+    </section>
+
+    <footer>
+      <button id="btn-quit" class="btn-secondary">Quit</button>
+    </footer>
+  </div>
+  <script src="renderer.js"></script>
+</body>
+</html>

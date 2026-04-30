@@ -1,0 +1,243 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  font-size: 13px;
+  color: #1a1a1a;
+  background: #ffffff;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  min-height: 100vh;
+}
+
+header {
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+header h1 {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+
+section {
+  padding: 10px 16px;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #888;
+  margin-bottom: 6px;
+}
+
+/* Active mounts */
+.mount-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.mount-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot-connected    { background: #34c759; }
+.dot-disconnected { background: #ff3b30; }
+.dot-connecting   { background: #ff9500; }
+.dot-error        { background: #ff3b30; }
+
+.mount-path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #333;
+  cursor: default;
+}
+
+.mount-type-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #f0f0f0;
+  color: #666;
+}
+
+/* Buttons */
+#actions-section {
+  display: flex;
+  gap: 8px;
+  flex-direction: column;
+}
+
+.btn-primary, .btn-secondary, .btn-small, .btn-danger {
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: inherit;
+  transition: opacity 0.1s;
+}
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-primary {
+  background: #007aff;
+  color: #fff;
+  padding: 7px 14px;
+  font-weight: 500;
+  width: 100%;
+}
+.btn-primary:hover:not(:disabled) { opacity: 0.85; }
+
+.btn-secondary {
+  background: #f2f2f7;
+  color: #333;
+  padding: 7px 14px;
+}
+.btn-secondary:hover { background: #e5e5ea; }
+
+.btn-small {
+  background: #f2f2f7;
+  color: #333;
+  padding: 3px 8px;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.btn-small:hover { background: #e5e5ea; }
+
+.btn-danger {
+  background: transparent;
+  color: #ff3b30;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+.btn-danger:hover { background: #fff0ef; }
+
+/* Card panels */
+.card {
+  margin: 0 16px 0;
+  padding: 10px 12px;
+  background: #f9f9f9;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  margin-bottom: 0;
+}
+
+.card-label {
+  font-size: 11px;
+  color: #888;
+  margin-bottom: 5px;
+}
+
+.key-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.key-row code {
+  flex: 1;
+  font-family: 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Mount panel inputs */
+#key-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #d1d1d6;
+  border-radius: 6px;
+  font-family: 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+  margin-bottom: 6px;
+  outline: none;
+}
+#key-input:focus { border-color: #007aff; }
+
+#mount-path-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.path-hint {
+  flex: 1;
+  color: #999;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.btn-row {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-row .btn-primary { flex: 1; }
+.btn-row .btn-secondary { flex: 1; }
+
+#mount-status-msg {
+  font-size: 11px;
+  color: #ff3b30;
+  margin-top: 4px;
+  min-height: 14px;
+}
+
+/* Saved drives */
+.saved-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.saved-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty-hint {
+  color: #aaa;
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+footer {
+  padding: 10px 16px;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+}
+
+.hidden { display: none !important; }
+
+/* Sections that contain cards */
+#share-card, #mount-panel {
+  margin: 0;
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+}

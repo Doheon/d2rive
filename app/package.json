@@ -1,0 +1,21 @@
+{
+  "name": "d2rive-app",
+  "version": "0.1.0",
+  "description": "d2rive menubar app",
+  "main": "main/index.js",
+  "type": "commonjs",
+  "bin": {
+    "d2rive-app": "bin/d2rive-app.js"
+  },
+  "scripts": {
+    "start": "electron .",
+    "rebuild": "npx @electron/rebuild -f -w fuse-native --module-dir .."
+  },
+  "dependencies": {
+    "menubar": "^9.4.0"
+  },
+  "devDependencies": {
+    "electron": "^34.0.0",
+    "@electron/rebuild": "^3.7.0"
+  }
+}
