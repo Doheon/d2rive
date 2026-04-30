@@ -91,7 +91,7 @@ export async function shareFolder(folderPath, { writable = false } = {}) {
   }
 }
 
-export async function watchDrive(keyHex, localFolder) {
+export async function watchDrive(keyHex, localFolder, { clean = false } = {}) {
   const key = b4a.from(keyHex, 'hex')
   const { drive, store, swarm } = await setupDrive(key)
   await connectToPeers(drive, swarm)
@@ -103,7 +103,8 @@ export async function watchDrive(keyHex, localFolder) {
   await mkdir(localFolder, { recursive: true })
 
   console.log(`Initial sync... (${writable ? 'writable' : 'read-only'})`)
-  await downloadAll(drive, localFolder, { writable })
+  const driveFiles = await downloadAll(drive, localFolder, { writable })
+  if (clean) await cleanLocalFolder(localFolder, driveFiles)
 
   if (writable) {
     console.log('Writable mode: local files are editable.')
@@ -119,7 +120,7 @@ export async function watchDrive(keyHex, localFolder) {
         const counts = { add: 0, change: 0, remove: 0 }
         for await (const diff of drive.diff(version, '/')) {
           const filePath = diff.left?.key || diff.right?.key
-          if (!filePath || filePath.endsWith('/.keep')) continue
+          if (!filePath || filePath.endsWith('/.keep') || filePath === '/.d2rive-config') continue
           if (!diff.right) {
             const dest = join(localFolder, filePath)
             if (!writable) await chmod(dest, 0o644).catch(() => {})
@@ -297,8 +298,32 @@ async function downloadAll(drive, localPath, { writable = false } = {}) {
     process.stdout.write(`\r  [${done}/${total}] ${filePath.slice(0, 50)}`)
   }
   if (total > 0) process.stdout.write('\r\x1b[K')
-  if (total === 0) console.log('Drive is empty or no files visible yet.')
-  else console.log(`Synced ${total} files (${fmtBytes(bytes)}) → ${localPath}`)
+  const realTotal = files.filter(f => f !== '/.d2rive-config').length
+  if (realTotal === 0) console.log('Drive is empty or no files visible yet.')
+  else console.log(`Synced ${realTotal} files (${fmtBytes(bytes)}) → ${localPath}`)
+
+  return new Set(files.filter(f => f !== '/.d2rive-config'))
+}
+
+async function cleanLocalFolder(baseDir, driveFiles) {
+  async function clean(dir) {
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+    for (const e of entries) {
+      const abs = join(dir, e.name)
+      if (e.isDirectory()) {
+        await clean(abs)
+        const left = await readdir(abs).catch(() => [])
+        if (!left.length) await rm(abs, { recursive: true, force: true }).catch(() => {})
+      } else {
+        const rel = abs.slice(baseDir.length).replace(/\\/g, '/')
+        if (!driveFiles.has(rel)) {
+          await chmod(abs, 0o644).catch(() => {})
+          await rm(abs, { force: true }).catch(() => {})
+        }
+      }
+    }
+  }
+  await clean(baseDir)
 }
 
 function watchLocal(folderPath, local, drive, ignore) {

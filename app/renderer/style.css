@@ -173,6 +173,56 @@ section {
 }
 
 
+/* Info card (watch save card) */
+.info-card {
+  background: #f0f7ff;
+  border: 1px solid #c7e0ff;
+  border-radius: 7px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.info-card input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #d1d1d6;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+  box-sizing: border-box;
+}
+.info-card input:focus { border-color: #007aff; }
+
+/* Warning */
+.mount-warning {
+  font-size: 11px;
+  color: #b25000;
+  background: #fff8ee;
+  border: 1px solid #ffd07a;
+  border-radius: 5px;
+  padding: 5px 8px;
+}
+
+/* Saved drives with folder */
+.saved-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.saved-folder {
+  font-size: 10px;
+  color: #aaa;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Mount section */
 #key-input {
   width: 100%;
@@ -200,16 +250,6 @@ section {
   white-space: nowrap;
 }
 
-#save-name-input {
-  width: 100%;
-  padding: 6px 8px;
-  border: 1px solid #d1d1d6;
-  border-radius: 6px;
-  font-family: inherit;
-  font-size: 12px;
-  outline: none;
-}
-#save-name-input:focus { border-color: #007aff; }
 
 .btn-row {
   display: flex;

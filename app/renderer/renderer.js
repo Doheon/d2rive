@@ -5,7 +5,11 @@ let state = {
   activeMounts: [],
   savedDrives: [],
   pendingShareKey: null,
-  mountSelectedPath: null
+  mountSelectedPath: null,
+  mountPathIsDefault: true,
+  mountNeedsClean: false,
+  pendingWatchKey: null,
+  pendingWatchFolder: null
 }
 
 async function refresh() {
@@ -53,12 +57,22 @@ function renderSaved() {
     el.innerHTML = '<div class="empty-hint">No saved drives</div>'
     return
   }
-  el.innerHTML = state.savedDrives.map(d => `
+  el.innerHTML = state.savedDrives.map(d => {
+    const folderLabel = d.folder ? d.folder.replace(/^\/Users\/[^/]+/, '~') : ''
+    const folderHint = folderLabel ? `<span class="saved-folder">${folderLabel}</span>` : ''
+    const escapedKey = d.key
+    const escapedFolder = (d.folder || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+    const escapedName = d.name.replace(/'/g, "\\'")
+    return `
     <div class="saved-row">
-      <span class="saved-name" title="${d.key}">${d.name}</span>
-      <button class="btn-small" onclick="onWatchSaved('${d.key}')">Watch</button>
-      <button class="btn-danger" onclick="onForget('${d.name}')">Remove</button>
-    </div>`).join('')
+      <div class="saved-info">
+        <span class="saved-name" title="${d.key}">${d.name}</span>
+        ${folderHint}
+      </div>
+      <button class="btn-small" onclick="onWatchSaved('${escapedKey}', '${escapedFolder}')">Watch</button>
+      <button class="btn-danger" onclick="onForget('${escapedName}')">Remove</button>
+    </div>`
+  }).join('')
 }
 
 // ── Share ─────────────────────────────────────────────────────────────────────
@@ -90,30 +104,60 @@ document.getElementById('btn-copy-key').addEventListener('click', () => {
 
 // ── Watch ─────────────────────────────────────────────────────────────────────
 
+document.getElementById('key-input').addEventListener('input', async () => {
+  const key = document.getElementById('key-input').value.trim()
+  // Reset warning when key changes
+  state.mountNeedsClean = false
+  document.getElementById('mount-warning').classList.add('hidden')
+  document.getElementById('btn-connect').textContent = 'Watch'
+
+  if (/^[0-9a-f]{64}$/i.test(key) && state.mountPathIsDefault) {
+    const p = api.getDefaultFolder(key)
+    state.mountSelectedPath = p
+    document.getElementById('mount-path-label').textContent = p.replace(/^\/Users\/[^/]+/, '~')
+  } else if (!/^[0-9a-f]{64}$/i.test(key) && state.mountPathIsDefault) {
+    state.mountSelectedPath = null
+    document.getElementById('mount-path-label').textContent = 'Enter key to set default folder'
+  }
+  updateWatchBtns()
+})
+
 document.getElementById('btn-pick-folder').addEventListener('click', async () => {
   const result = await api.pickFolder()
   if (result.cancelled) return
   state.mountSelectedPath = result.path
+  state.mountPathIsDefault = false
+  // Reset warning when folder changes
+  state.mountNeedsClean = false
+  document.getElementById('mount-warning').classList.add('hidden')
+  document.getElementById('btn-connect').textContent = 'Watch'
   document.getElementById('mount-path-label').textContent = result.path.replace(/^\/Users\/[^/]+/, '~')
   updateWatchBtns()
 })
 
-document.getElementById('key-input').addEventListener('input', updateWatchBtns)
-document.getElementById('save-name-input').addEventListener('input', updateWatchBtns)
-
 function updateWatchBtns() {
   const key = document.getElementById('key-input').value.trim()
-  const name = document.getElementById('save-name-input').value.trim()
   const validKey = /^[0-9a-f]{64}$/i.test(key)
   document.getElementById('btn-connect').disabled = !validKey || !state.mountSelectedPath
-  document.getElementById('btn-save-key').disabled = !validKey || !name
 }
 
 document.getElementById('btn-connect').addEventListener('click', async () => {
   const key = document.getElementById('key-input').value.trim()
-  const name = document.getElementById('save-name-input').value.trim()
   const mountpoint = state.mountSelectedPath
   if (!key || !mountpoint) return
+
+  // First click: check if folder has existing files
+  if (!state.mountNeedsClean) {
+    const info = await api.folderInfo(mountpoint)
+    if (info.hasFiles) {
+      state.mountNeedsClean = true
+      const w = document.getElementById('mount-warning')
+      w.textContent = `⚠ ${info.count} existing file(s) will be deleted. Click again to confirm.`
+      w.classList.remove('hidden')
+      document.getElementById('btn-connect').textContent = 'Watch (overwrite)'
+      return
+    }
+  }
 
   const btn = document.getElementById('btn-connect')
   const msg = document.getElementById('mount-status-msg')
@@ -121,38 +165,55 @@ document.getElementById('btn-connect').addEventListener('click', async () => {
   btn.innerHTML = '<span class="spinner"></span>Watching…'
   msg.textContent = ''
 
-  const r = await api.watchDrive(key, mountpoint)
+  const r = await api.watchDrive(key, mountpoint, state.mountNeedsClean)
   btn.innerHTML = 'Watch'
 
   if (r.error) {
     msg.textContent = friendlyError(r.error)
     btn.disabled = false
+    state.mountNeedsClean = false
+    document.getElementById('mount-warning').classList.add('hidden')
     return
   }
 
-  if (name) await api.saveDrive(name, key)
+  // Success — store pending save info
+  state.pendingWatchKey = key
+  state.pendingWatchFolder = mountpoint
 
+  // Reset inputs
   document.getElementById('key-input').value = ''
-  document.getElementById('save-name-input').value = ''
-  document.getElementById('mount-path-label').textContent = 'No folder selected'
+  document.getElementById('mount-path-label').textContent = 'Enter key to set default folder'
   state.mountSelectedPath = null
+  state.mountPathIsDefault = true
+  state.mountNeedsClean = false
+  document.getElementById('mount-warning').classList.add('hidden')
+  btn.textContent = 'Watch'
   msg.textContent = ''
   updateWatchBtns()
+
+  // Show save card
+  document.getElementById('watch-save-card').classList.remove('hidden')
+  document.getElementById('watch-save-name').focus()
+
   await refresh()
 })
 
-document.getElementById('btn-save-key').addEventListener('click', async () => {
-  const key = document.getElementById('key-input').value.trim()
-  const name = document.getElementById('save-name-input').value.trim()
-  if (!key || !name) return
-  const r = await api.saveDrive(name, key)
-  if (r.error) { alert('Save failed: ' + r.error); return }
-  document.getElementById('save-name-input').value = ''
-  document.getElementById('key-input').value = ''
-  state.mountSelectedPath = null
-  document.getElementById('mount-path-label').textContent = 'No folder selected'
-  updateWatchBtns()
+document.getElementById('btn-watch-save').addEventListener('click', async () => {
+  const name = document.getElementById('watch-save-name').value.trim()
+  if (!name) return
+  await api.saveDrive(name, state.pendingWatchKey, state.pendingWatchFolder)
+  document.getElementById('watch-save-card').classList.add('hidden')
+  document.getElementById('watch-save-name').value = ''
+  state.pendingWatchKey = null
+  state.pendingWatchFolder = null
   await refresh()
+})
+
+document.getElementById('btn-watch-save-dismiss').addEventListener('click', () => {
+  document.getElementById('watch-save-card').classList.add('hidden')
+  document.getElementById('watch-save-name').value = ''
+  state.pendingWatchKey = null
+  state.pendingWatchFolder = null
 })
 
 function friendlyError(err) {
@@ -172,17 +233,30 @@ function onStop(mountpoint) {
 async function onSaveMount(mountpoint, key) {
   const name = await showNameDialog(mountpoint.split('/').pop() || '')
   if (!name) return
-  const r = await api.saveDrive(name, key)
+  const r = await api.saveDrive(name, key, mountpoint)
   if (r.error) { alert('Save failed: ' + r.error); return }
   await refresh()
 }
 
 // ── Saved drives ──────────────────────────────────────────────────────────────
 
-async function onWatchSaved(key) {
-  const result = await api.pickFolder()
-  if (result.cancelled) return
-  const r = await api.watchDrive(key, result.path)
+async function onWatchSaved(key, folder) {
+  let mountFolder = folder || null
+
+  if (!mountFolder) {
+    const result = await api.pickFolder()
+    if (result.cancelled) return
+    mountFolder = result.path
+  }
+
+  const info = await api.folderInfo(mountFolder)
+  let clean = false
+  if (info.hasFiles) {
+    if (!confirm(`${info.count} existing file(s) in this folder will be deleted. Continue?`)) return
+    clean = true
+  }
+
+  const r = await api.watchDrive(key, mountFolder, clean)
   if (r.error) { alert('Watch failed: ' + friendlyError(r.error)); return }
   await refresh()
 }

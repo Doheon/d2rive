@@ -36,16 +36,21 @@
     <section id="mount-section">
       <div class="section-title">Watch Drive</div>
       <input id="key-input" type="text" placeholder="64-character hex key" spellcheck="false">
-      <input id="save-name-input" type="text" placeholder="Save as name (optional)" spellcheck="false">
       <div id="mount-path-row">
-        <span id="mount-path-label" class="path-hint">No folder selected</span>
-        <button id="btn-pick-folder" class="btn-small">Select&hellip;</button>
+        <span id="mount-path-label" class="path-hint">Enter key to set default folder</span>
+        <button id="btn-pick-folder" class="btn-small">Change&hellip;</button>
       </div>
-      <div class="btn-row">
-        <button id="btn-connect" class="btn-primary" disabled>Watch</button>
-        <button id="btn-save-key" class="btn-secondary" disabled>Save</button>
-      </div>
+      <div id="mount-warning" class="mount-warning hidden"></div>
+      <button id="btn-connect" class="btn-primary" disabled>Watch</button>
       <div id="mount-status-msg"></div>
+      <div id="watch-save-card" class="info-card hidden">
+        <div class="card-label">Save for quick access?</div>
+        <input id="watch-save-name" type="text" placeholder="Name this drive" spellcheck="false">
+        <div class="btn-row">
+          <button id="btn-watch-save" class="btn-primary">Save</button>
+          <button id="btn-watch-save-dismiss" class="btn-secondary">Dismiss</button>
+        </div>
+      </div>
     </section>
 
     <section id="saved-section">

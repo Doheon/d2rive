@@ -2,6 +2,8 @@
 const { app, ipcMain, dialog, shell, Tray, BrowserWindow, nativeImage, screen } = require('electron')
 const { spawn, execSync } = require('child_process')
 const path = require('path')
+const os = require('os')
+const { readdir } = require('fs/promises')
 const mounts = require('./mounts')
 
 const BIN = path.resolve(__dirname, '../../bin/d2rive.js')
@@ -230,12 +232,13 @@ function registerIPC() {
     })
   })
 
-  ipcMain.handle('drive:watch', async (_, { keyHex, localFolder }) => {
+  ipcMain.handle('drive:watch', async (_, { keyHex, localFolder, clean }) => {
     return new Promise((resolve) => {
       let done = false
       let stderrLines = []
       let watchWritable = false
-      const child = spawnD2rive(['watch', keyHex, localFolder], {
+      const watchArgs = clean ? ['watch', '--clean', keyHex, localFolder] : ['watch', keyHex, localFolder]
+      const child = spawnD2rive(watchArgs, {
         onLine(line) {
           if (done) {
             if (line.includes('Lost connection')) mounts.setStatus(localFolder, 'disconnected')
@@ -283,13 +286,22 @@ function registerIPC() {
 
   ipcMain.handle('drive:list-saved', async () => {
     if (!drivesLib) return []
-    const drives = await drivesLib.listDrives()
-    return Object.entries(drives).map(([name, key]) => ({ name, key }))
+    return drivesLib.listDrives()
   })
 
-  ipcMain.handle('drive:save', async (_, { name, key }) => {
-    try { await drivesLib.saveDrive(name, key); return { ok: true } }
+  ipcMain.handle('drive:save', async (_, { name, key, folder }) => {
+    try { await drivesLib.saveDrive(name, key, folder || null); return { ok: true } }
     catch (err) { return { error: err.message } }
+  })
+
+  ipcMain.handle('app:folder-info', async (_, { path: p }) => {
+    try {
+      const entries = await readdir(p, { withFileTypes: true })
+      const count = entries.length
+      return { exists: true, hasFiles: count > 0, count }
+    } catch {
+      return { exists: false, hasFiles: false, count: 0 }
+    }
   })
 
   ipcMain.handle('drive:forget', async (_, { name }) => {

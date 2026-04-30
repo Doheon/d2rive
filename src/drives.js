@@ -19,9 +19,9 @@ async function writeDrives(data) {
   await writeFile(p, JSON.stringify(data, null, 2))
 }
 
-export async function saveDrive(name, keyHex) {
+export async function saveDrive(name, keyHex, folder = null) {
   const drives = await readDrives()
-  drives[name] = keyHex
+  drives[name] = folder ? { key: keyHex, folder } : keyHex
   await writeDrives(drives)
 }
 
@@ -32,12 +32,18 @@ export async function removeDrive(name) {
 }
 
 export async function listDrives() {
-  return readDrives()
+  const drives = await readDrives()
+  return Object.entries(drives).map(([name, val]) => ({
+    name,
+    key: typeof val === 'string' ? val : val.key,
+    folder: typeof val === 'string' ? null : (val.folder || null)
+  }))
 }
 
 export async function resolveKey(nameOrKey) {
   if (/^[0-9a-f]{64}$/i.test(nameOrKey)) return nameOrKey
   const drives = await readDrives()
-  if (drives[nameOrKey]) return drives[nameOrKey]
-  throw new Error(`Unknown drive name: "${nameOrKey}"`)
+  const entry = drives[nameOrKey]
+  if (!entry) throw new Error(`Unknown drive name: "${nameOrKey}"`)
+  return typeof entry === 'string' ? entry : entry.key
 }

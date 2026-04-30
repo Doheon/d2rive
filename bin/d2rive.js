@@ -5,6 +5,7 @@ import {
 } from '../src/mount.js'
 import { saveDrive, removeDrive, listDrives, resolveKey } from '../src/drives.js'
 
+
 if (process.platform === 'win32') {
   console.error('Windows is not yet supported.')
   console.error('Contributions welcome — see CONTRIBUTING.md')
@@ -24,10 +25,12 @@ const commands = {
   },
 
   async watch() {
-    const [keyOrName, localFolder] = args
+    const clean = args.includes('--clean')
+    const cleanArgs = args.filter(a => a !== '--clean')
+    const [keyOrName, localFolder] = cleanArgs
     if (!keyOrName || !localFolder) usage()
     const key = await resolveKey(keyOrName)
-    const { cleanup } = await watchDrive(key, localFolder)
+    const { cleanup } = await watchDrive(key, localFolder, { clean })
     onExit(cleanup)
   },
 
@@ -97,10 +100,10 @@ const commands = {
 
   async saved() {
     const drives = await listDrives()
-    const entries = Object.entries(drives)
-    if (!entries.length) { console.log('No saved drives'); return }
-    for (const [name, key] of entries) {
-      console.log(`  ${name.padEnd(20)} ${key.slice(0, 20)}...`)
+    if (!drives.length) { console.log('No saved drives'); return }
+    for (const { name, key, folder } of drives) {
+      const folderStr = folder ? `  ${folder}` : ''
+      console.log(`  ${name.padEnd(20)} ${key.slice(0, 20)}...${folderStr}`)
     }
   },
 
