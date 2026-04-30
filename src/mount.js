@@ -30,7 +30,9 @@ async function setupDrive(key) {
 
   const swarm = new Hyperswarm()
   let wasDisconnected = false
+  let disconnectTimer = null
   swarm.on('connection', conn => {
+    if (disconnectTimer) { clearTimeout(disconnectTimer); disconnectTimer = null }
     if (wasDisconnected) {
       console.log('\nReconnected to peer.')
       wasDisconnected = false
@@ -40,6 +42,7 @@ async function setupDrive(key) {
       if (swarm.connections.size === 0) {
         wasDisconnected = true
         console.log('\nLost connection to all peers. Reconnecting...')
+        disconnectTimer = setTimeout(() => process.exit(0), 30000)
       }
     })
   })
