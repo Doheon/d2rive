@@ -5,3 +5,4 @@ mnt-*/
 *.ips
 .DS_Store
 .omc/
+.claude/
