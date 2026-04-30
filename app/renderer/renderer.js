@@ -240,9 +240,11 @@ async function onForget(name) {
 // ── Add saved drive ───────────────────────────────────────────────────────────
 
 let savedAddFolder = null
+let savedAddFolderIsDefault = true
 
 function resetSavedAddCard() {
   savedAddFolder = null
+  savedAddFolderIsDefault = true
   document.getElementById('saved-add-name').value = ''
   document.getElementById('saved-add-key').value = ''
   document.getElementById('saved-add-folder-label').textContent = 'No folder (will ask when watching)'
@@ -254,10 +256,23 @@ document.getElementById('btn-saved-add').addEventListener('click', () => {
   document.getElementById('saved-add-name').focus()
 })
 
+document.getElementById('saved-add-key').addEventListener('input', async () => {
+  const key = document.getElementById('saved-add-key').value.trim()
+  if (/^[0-9a-f]{64}$/i.test(key) && savedAddFolderIsDefault) {
+    const p = await api.getDefaultFolder(key)
+    savedAddFolder = p
+    document.getElementById('saved-add-folder-label').textContent = p.replace(/^\/Users\/[^/]+/, '~')
+  } else if (!/^[0-9a-f]{64}$/i.test(key) && savedAddFolderIsDefault) {
+    savedAddFolder = null
+    document.getElementById('saved-add-folder-label').textContent = 'No folder (will ask when watching)'
+  }
+})
+
 document.getElementById('btn-saved-add-folder').addEventListener('click', async () => {
   const result = await api.pickFolder()
   if (result.cancelled) return
   savedAddFolder = result.path
+  savedAddFolderIsDefault = false
   document.getElementById('saved-add-folder-label').textContent = result.path.replace(/^\/Users\/[^/]+/, '~')
 })
 
