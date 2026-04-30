@@ -63,7 +63,7 @@ function renderSaved() {
         <span class="saved-name" title="${d.key}">${d.name}</span>
         ${folderHint}
       </div>
-      <button class="btn-small" onclick="onWatchSaved('${escapedKey}', '${escapedFolder}')">Watch</button>
+      <button class="btn-small" onclick="onWatchSaved(this, '${escapedKey}', '${escapedFolder}')">Watch</button>
       <button class="btn-danger" onclick="onForget('${escapedName}')">Remove</button>
     </div>`
   }).join('')
@@ -206,7 +206,7 @@ function onStop(mountpoint) {
 
 // ── Saved drives ──────────────────────────────────────────────────────────────
 
-async function onWatchSaved(key, folder) {
+async function onWatchSaved(btn, key, folder) {
   let mountFolder = folder || null
 
   if (!mountFolder) {
@@ -222,7 +222,11 @@ async function onWatchSaved(key, folder) {
     clean = true
   }
 
+  btn.disabled = true
+  btn.innerHTML = '<span class="spinner" style="border-color:rgba(0,0,0,0.2);border-top-color:#333;"></span>'
   const r = await api.watchDrive(key, mountFolder, clean)
+  btn.disabled = false
+  btn.textContent = 'Watch'
   if (r.error) { alert('Watch failed: ' + friendlyError(r.error)); return }
   await refresh()
 }
