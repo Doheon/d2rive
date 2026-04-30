@@ -62,10 +62,12 @@ function discoverMounts() {
         mounts.addMount({ mountpoint: localFolder, key, type: 'watch', status: 'connected',
           cleanup: makeCleanupByPid(pid) })
       } else if (cmd === 'share') {
-        const folderPath = parts[cmdIdx + 2]
+        const rest = parts.slice(cmdIdx + 2)
+        const writable = rest.includes('--write')
+        const folderPath = rest.find(p => !p.startsWith('-'))
         if (!folderPath) continue
         if (mounts.getAllMounts().find(m => m.mountpoint === folderPath)) continue
-        mounts.addMount({ mountpoint: folderPath, key: '', type: 'share', status: 'connected',
+        mounts.addMount({ mountpoint: folderPath, key: '', type: 'share', status: 'connected', writable,
           cleanup: makeCleanupByPid(pid) })
       }
     }
@@ -213,7 +215,7 @@ function registerIPC() {
             done = true
             const key = m[1]
             mounts.addMount({
-              mountpoint: folderPath, key, type: 'share', status: 'connected',
+              mountpoint: folderPath, key, type: 'share', status: 'connected', writable: !!writable,
               cleanup: makeCleanup(child)
             })
             resolve({ key })
@@ -232,6 +234,7 @@ function registerIPC() {
     return new Promise((resolve) => {
       let done = false
       let stderrLines = []
+      let watchWritable = false
       const child = spawnD2rive(['watch', keyHex, localFolder], {
         onLine(line) {
           if (done) {
@@ -239,11 +242,12 @@ function registerIPC() {
             else if (line.includes('Reconnected')) mounts.setStatus(localFolder, 'connected')
             return
           }
+          if (line.includes('Initial sync...')) watchWritable = line.includes('writable')
           if (line.includes('Running...')) {
             done = true
             mounts.addMount({
               mountpoint: localFolder, key: keyHex, type: 'watch', status: 'connected',
-              cleanup: makeCleanup(child)
+              writable: watchWritable, cleanup: makeCleanup(child)
             })
             resolve({ ok: true })
           }

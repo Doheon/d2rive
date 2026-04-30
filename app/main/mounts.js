@@ -16,8 +16,8 @@ function notify(mountpoint, status) {
   }
 }
 
-function addMount({ mountpoint, key, type, status, cleanup }) {
-  sessions.set(mountpoint, { mountpoint, key, type, status, cleanup })
+function addMount({ mountpoint, key, type, status, writable = false, cleanup }) {
+  sessions.set(mountpoint, { mountpoint, key, type, status, writable, cleanup })
   notify(mountpoint, status)
   const label = mountpoint.replace(/^\/Users\/[^/]+/, '~')
   if (status === 'connected') sendNotification('d2rive', `Connected: ${label}`)

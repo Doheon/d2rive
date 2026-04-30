@@ -28,7 +28,9 @@ function renderMounts() {
   el.innerHTML = state.activeMounts.map(m => {
     const dotClass = `dot-${m.status}`
     const label = m.mountpoint.replace(/^\/Users\/[^/]+/, '~')
-    const badge = m.type === 'share' ? 'sharing' : 'watching'
+    const badge = m.type === 'share'
+      ? (m.writable ? 'sharing · writable' : 'sharing · read-only')
+      : 'watching'
     const mp = m.mountpoint.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
     const saveBtn = m.type === 'watch' && m.key
       ? `<button class="btn-small" onclick="onSaveMount('${mp}', '${m.key}')">Save</button>`

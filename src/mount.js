@@ -106,10 +106,7 @@ export async function watchDrive(keyHex, localFolder) {
   await downloadAll(drive, localFolder, { writable })
 
   if (writable) {
-    const local = new Localdrive(localFolder)
-    const ignore = await loadIgnore(localFolder)
-    watchLocal(localFolder, local, drive, ignore)
-    console.log('Writable mode: local changes will be synced to remote.')
+    console.log('Writable mode: local files are editable.')
   }
 
   let version = drive.version
@@ -133,7 +130,7 @@ export async function watchDrive(keyHex, localFolder) {
             if (data) {
               const dest = join(localFolder, filePath)
               await mkdir(dirname(dest), { recursive: true })
-              if (!writable) await chmod(dest, 0o644).catch(() => {})
+              await chmod(dest, 0o644).catch(() => {})
               await writeFile(dest, data)
               if (!writable) await chmod(dest, 0o444)
               diff.left ? counts.change++ : counts.add++
@@ -291,7 +288,7 @@ async function downloadAll(drive, localPath, { writable = false } = {}) {
     if (data) {
       const dest = join(localPath, filePath)
       await mkdir(dirname(dest), { recursive: true })
-      if (!writable) await chmod(dest, 0o644).catch(() => {})
+      await chmod(dest, 0o644).catch(() => {})
       await writeFile(dest, data)
       if (!writable) await chmod(dest, 0o444)
       bytes += data.byteLength
