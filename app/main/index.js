@@ -155,6 +155,13 @@ app.whenReady().then(async () => {
   createWindow()
   discoverMounts()
 
+  // Show panel on launch so users know the app is running
+  const bounds = tray.getBounds()
+  const { x, y } = getWindowPosition(bounds)
+  win.setPosition(x, y)
+  win.show()
+  win.focus()
+
   app.on('before-quit', async (e) => {
     if (quitting) return
     quitting = true
