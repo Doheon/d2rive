@@ -238,7 +238,7 @@ function registerIPC() {
           },
           onExit(code) {
             if (!done) { done = true; resolve({ error: `Process exited (code ${code})` }) }
-            else mounts.setStatus(folderPath, 'disconnected')
+            else mounts.removeMount(folderPath)
           }
         })
         setTimeout(() => { if (!done) { done = true; resolve({ error: 'Timed out waiting for sync key' }) } }, 30000)
@@ -264,7 +264,7 @@ function registerIPC() {
         },
         onExit(code) {
           if (!done) { done = true; resolve({ error: `Process exited (code ${code})` }) }
-          else mounts.setStatus(folderPath, 'disconnected')
+          else mounts.removeMount(folderPath)
         }
       })
       setTimeout(() => { if (!done) { done = true; resolve({ error: 'Timed out waiting for drive key' }) } }, 30000)
@@ -295,7 +295,7 @@ function registerIPC() {
           onStderr(line) { if (!done) stderrLines.push(line) },
           onExit(code) {
             if (!done) { done = true; resolve({ error: stderrLines.join(' ').trim() || `Process exited (code ${code})` }) }
-            else mounts.setStatus(localFolder, 'disconnected')
+            else mounts.removeMount(localFolder)
           }
         })
         setTimeout(() => {
@@ -330,7 +330,7 @@ function registerIPC() {
         onStderr(line) { if (!done) stderrLines.push(line) },
         onExit(code) {
           if (!done) { done = true; resolve({ error: stderrLines.join(' ').trim() || `Process exited (code ${code})` }) }
-          else mounts.setStatus(localFolder, 'disconnected')
+          else mounts.removeMount(localFolder)
         }
       })
       setTimeout(() => {
