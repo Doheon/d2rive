@@ -13,7 +13,7 @@
   "dependencies": {
     "autobase": "^7.27.3",
     "b4a": "^1.6.7",
-    "corestore": "^6.18.0",
+    "corestore": "^7.0.0",
     "hyperdrive": "^11.11.0",
     "hyperswarm": "^4.8.4",
     "localdrive": "^2.2.1",
