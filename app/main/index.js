@@ -71,6 +71,21 @@ function discoverMounts() {
         if (mounts.getAllMounts().find(m => m.mountpoint === folderPath)) continue
         mounts.addMount({ mountpoint: folderPath, key: '', type: 'share', status: 'connected', writable,
           cleanup: makeCleanupByPid(pid) })
+      } else if (cmd === 'sync-create') {
+        const rest = parts.slice(cmdIdx + 2)
+        const folderPath = rest.find(p => !p.startsWith('-'))
+        if (!folderPath) continue
+        if (mounts.getAllMounts().find(m => m.mountpoint === folderPath)) continue
+        mounts.addMount({ mountpoint: folderPath, key: '', type: 'sync', status: 'connected', writable: true,
+          cleanup: makeCleanupByPid(pid) })
+      } else if (cmd === 'sync-join') {
+        const rest = parts.slice(cmdIdx + 2).filter(p => !p.startsWith('-'))
+        const key = rest[0]
+        const localFolder = rest[1]
+        if (!key || !localFolder || !/^[0-9a-f]{64}$/i.test(key)) continue
+        if (mounts.getAllMounts().find(m => m.mountpoint === localFolder)) continue
+        mounts.addMount({ mountpoint: localFolder, key, type: 'sync', status: 'connected', writable: true,
+          cleanup: makeCleanupByPid(pid) })
       }
     }
   } catch {}
@@ -274,6 +289,78 @@ function registerIPC() {
           resolve({ ok: true })
         }
       }, 20000)
+    })
+  })
+
+  ipcMain.handle('drive:sync-create', async (_, { folderPath }) => {
+    return new Promise((resolve) => {
+      let done = false
+      const child = spawnD2rive(['sync-create', folderPath], {
+        onLine(line) {
+          if (done) {
+            if (line.includes('Lost connection')) mounts.setStatus(folderPath, 'disconnected')
+            else if (line.includes('Reconnected')) mounts.setStatus(folderPath, 'connected')
+            return
+          }
+          const m = line.match(/Sync key:\s+([0-9a-f]{64})/i)
+          if (m) {
+            done = true
+            mounts.addMount({
+              mountpoint: folderPath, key: m[1], type: 'sync', status: 'connected', writable: true,
+              cleanup: makeCleanup(child)
+            })
+            resolve({ key: m[1] })
+          }
+        },
+        onExit(code) {
+          if (!done) { done = true; resolve({ error: `Process exited (code ${code})` }) }
+          else mounts.setStatus(folderPath, 'disconnected')
+        }
+      })
+      setTimeout(() => { if (!done) { done = true; resolve({ error: 'Timed out waiting for sync key' }) } }, 30000)
+    })
+  })
+
+  ipcMain.handle('drive:sync-join', async (_, { keyHex, localFolder, clean }) => {
+    return new Promise((resolve) => {
+      let done = false
+      let stderrLines = []
+      const args = clean ? ['sync-join', '--clean', keyHex, localFolder] : ['sync-join', keyHex, localFolder]
+      const child = spawnD2rive(args, {
+        onLine(line) {
+          if (done) {
+            if (line.includes('Lost connection')) mounts.setStatus(localFolder, 'disconnected')
+            else if (line.includes('Reconnected')) mounts.setStatus(localFolder, 'connected')
+            return
+          }
+          if (line.includes('Running...')) {
+            done = true
+            mounts.addMount({
+              mountpoint: localFolder, key: keyHex, type: 'sync', status: 'connected', writable: true,
+              cleanup: makeCleanup(child)
+            })
+            resolve({ ok: true })
+          }
+        },
+        onStderr(line) { if (!done) stderrLines.push(line) },
+        onExit(code) {
+          if (!done) {
+            done = true
+            const detail = stderrLines.join(' ').trim()
+            resolve({ error: detail || `Process exited (code ${code})` })
+          } else mounts.setStatus(localFolder, 'disconnected')
+        }
+      })
+      setTimeout(() => {
+        if (!done) {
+          done = true
+          mounts.addMount({
+            mountpoint: localFolder, key: keyHex, type: 'sync', status: 'connecting', writable: true,
+            cleanup: makeCleanup(child)
+          })
+          resolve({ ok: true })
+        }
+      }, 25000)
     })
   })
 

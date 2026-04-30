@@ -3,6 +3,7 @@ import {
   shareFolder, watchDrive, pullFile, driveInfo,
   cacheInfo, cacheClear, fmtBytes, syncFromDrive
 } from '../src/mount.js'
+import { createSync, joinSync } from '../src/sync.js'
 import { saveDrive, removeDrive, listDrives, resolveKey } from '../src/drives.js'
 
 
@@ -112,6 +113,22 @@ const commands = {
     if (!name) usage()
     await removeDrive(name)
     console.log(`Forgot "${name}"`)
+  },
+
+  async 'sync-create'() {
+    const [folderPath] = args
+    if (!folderPath) usage()
+    const { cleanup } = await createSync(folderPath)
+    onExit(cleanup)
+  },
+
+  async 'sync-join'() {
+    const cleanArgs = args.filter(a => a !== '--clean')
+    const [keyOrName, localFolder] = cleanArgs
+    if (!keyOrName || !localFolder) usage()
+    const key = await resolveKey(keyOrName)
+    const { cleanup } = await joinSync(key, localFolder)
+    onExit(cleanup)
   }
 }
 
@@ -131,6 +148,9 @@ function usage() {
   console.error(`Usage:
   d2rive share <folder>                    Share a local folder (syncs + watches for changes)
   d2rive watch <key|name> <localFolder>    Watch a remote drive, syncing files locally
+
+  d2rive sync-create <folder>              Bidirectional sync: create a sync session
+  d2rive sync-join <key|name> <folder>     Bidirectional sync: join an existing sync session
 
   d2rive pull <key|name> <remote> <local>  Download a single file from a drive
   d2rive info <key|name>                   List files and sizes in a drive

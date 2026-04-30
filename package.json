@@ -11,6 +11,7 @@
     "test": "node --test test/index.test.js"
   },
   "dependencies": {
+    "autobase": "^7.27.3",
     "b4a": "^1.6.7",
     "corestore": "^6.18.0",
     "hyperdrive": "^11.11.0",

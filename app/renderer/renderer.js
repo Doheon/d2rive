@@ -5,9 +5,13 @@ let state = {
   activeMounts: [],
   savedDrives: [],
   pendingShareKey: null,
+  pendingSyncKey: null,
   mountSelectedPath: null,
   mountPathIsDefault: true,
-  mountNeedsClean: false
+  mountNeedsClean: false,
+  syncJoinPath: null,
+  syncJoinPathIsDefault: true,
+  syncJoinNeedsClean: false
 }
 
 async function refresh() {
@@ -32,7 +36,9 @@ function renderMounts() {
     const label = m.mountpoint.replace(/^\/Users\/[^/]+/, '~')
     const badge = m.type === 'share'
       ? (m.writable ? 'sharing · writable' : 'sharing · read-only')
-      : 'watching'
+      : m.type === 'sync'
+        ? 'syncing'
+        : 'watching'
     const mp = m.mountpoint.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
     return `
       <div class="mount-row">
@@ -310,6 +316,121 @@ autoStartCb.addEventListener('change', () => api.setAutoStart(autoStartCb.checke
 // ── Quit ──────────────────────────────────────────────────────────────────────
 
 document.getElementById('btn-quit').addEventListener('click', () => api.quit())
+
+// ── Sync (bidirectional) ──────────────────────────────────────────────────────
+
+document.getElementById('btn-sync-create').addEventListener('click', async () => {
+  const result = await api.pickFolder()
+  if (result.cancelled) return
+  const btn = document.getElementById('btn-sync-create')
+  btn.disabled = true
+  btn.innerHTML = '<span class="spinner"></span>Starting…'
+  const r = await api.syncCreate(result.path)
+  btn.disabled = false
+  btn.textContent = 'Select Folder to Sync…'
+  if (r.error) { alert('Sync failed: ' + r.error); return }
+  state.pendingSyncKey = r.key
+  document.getElementById('sync-key-text').textContent = r.key
+  document.getElementById('sync-card').classList.remove('hidden')
+  await refresh()
+})
+
+document.getElementById('btn-copy-sync-key').addEventListener('click', () => {
+  navigator.clipboard.writeText(state.pendingSyncKey || '').then(() => {
+    const btn = document.getElementById('btn-copy-sync-key')
+    btn.textContent = 'Copied!'
+    setTimeout(() => { btn.textContent = 'Copy' }, 1500)
+  })
+})
+
+document.getElementById('sync-key-input').addEventListener('input', async () => {
+  const key = document.getElementById('sync-key-input').value.trim()
+  state.syncJoinNeedsClean = false
+  document.getElementById('sync-join-warning').classList.add('hidden')
+  document.getElementById('btn-sync-join').textContent = 'Join Sync'
+
+  if (/^[0-9a-f]{64}$/i.test(key) && state.syncJoinPathIsDefault) {
+    const p = await api.getDefaultFolder(key)
+    state.syncJoinPath = p
+    document.getElementById('sync-join-path-label').textContent = p.replace(/^\/Users\/[^/]+/, '~')
+  } else if (!/^[0-9a-f]{64}$/i.test(key) && state.syncJoinPathIsDefault) {
+    state.syncJoinPath = null
+    document.getElementById('sync-join-path-label').textContent = 'Enter key to set default folder'
+  }
+  updateSyncJoinBtn()
+})
+
+document.getElementById('btn-sync-join-folder').addEventListener('click', async () => {
+  const result = await api.pickFolder()
+  if (result.cancelled) return
+  state.syncJoinPath = result.path
+  state.syncJoinPathIsDefault = false
+  state.syncJoinNeedsClean = false
+  document.getElementById('sync-join-warning').classList.add('hidden')
+  document.getElementById('btn-sync-join').textContent = 'Join Sync'
+  document.getElementById('sync-join-path-label').textContent = result.path.replace(/^\/Users\/[^/]+/, '~')
+  updateSyncJoinBtn()
+})
+
+function updateSyncJoinBtn() {
+  const key = document.getElementById('sync-key-input').value.trim()
+  const validKey = /^[0-9a-f]{64}$/i.test(key)
+  document.getElementById('btn-sync-join').disabled = !validKey || !state.syncJoinPath
+}
+
+document.getElementById('btn-sync-join').addEventListener('click', async () => {
+  const key = document.getElementById('sync-key-input').value.trim()
+  const folder = state.syncJoinPath
+  if (!key || !folder) return
+
+  const btn = document.getElementById('btn-sync-join')
+  const msg = document.getElementById('sync-join-status-msg')
+
+  // First click: check if folder has existing files (sync merges, not overwrites — but warn anyway)
+  if (!state.syncJoinNeedsClean) {
+    btn.disabled = true
+    btn.innerHTML = '<span class="spinner"></span>Checking…'
+    const info = await api.folderInfo(folder)
+    if (info.hasFiles) {
+      state.syncJoinNeedsClean = true
+      btn.disabled = false
+      btn.textContent = 'Join Sync (merge)'
+      const w = document.getElementById('sync-join-warning')
+      w.textContent = `⚠ ${info.count} existing file(s) will be merged into the sync. Click again to confirm.`
+      w.classList.remove('hidden')
+      return
+    }
+    btn.disabled = false
+    btn.textContent = 'Join Sync'
+  }
+
+  btn.disabled = true
+  btn.innerHTML = '<span class="spinner"></span>Joining…'
+  msg.textContent = ''
+
+  const r = await api.syncJoin(key, folder, false)
+  btn.innerHTML = 'Join Sync'
+
+  if (r.error) {
+    msg.textContent = friendlyError(r.error)
+    btn.disabled = false
+    state.syncJoinNeedsClean = false
+    document.getElementById('sync-join-warning').classList.add('hidden')
+    return
+  }
+
+  // Reset inputs
+  document.getElementById('sync-key-input').value = ''
+  document.getElementById('sync-join-path-label').textContent = 'Enter key to set default folder'
+  state.syncJoinPath = null
+  state.syncJoinPathIsDefault = true
+  state.syncJoinNeedsClean = false
+  document.getElementById('sync-join-warning').classList.add('hidden')
+  btn.textContent = 'Join Sync'
+  msg.textContent = ''
+  updateSyncJoinBtn()
+  await refresh()
+})
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 

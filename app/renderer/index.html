@@ -33,6 +33,27 @@
       </div>
     </section>
 
+    <section id="sync-section">
+      <div class="section-title">Sync Folder</div>
+      <button id="btn-sync-create" class="btn-primary">Select Folder to Sync&hellip;</button>
+      <div id="sync-card" class="hidden">
+        <div class="card-label">Sync Key &mdash; share this to let others join:</div>
+        <div class="key-row">
+          <code id="sync-key-text"></code>
+          <button id="btn-copy-sync-key" class="btn-small">Copy</button>
+        </div>
+      </div>
+      <div class="section-title" style="margin-top:6px;">Join Sync</div>
+      <input id="sync-key-input" type="text" placeholder="64-character sync key" spellcheck="false" style="font-family:'SF Mono',Menlo,monospace;font-size:11px;width:100%;padding:6px 8px;border:1px solid #d1d1d6;border-radius:6px;outline:none;">
+      <div id="sync-join-path-row" style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+        <span id="sync-join-path-label" class="path-hint">Enter key to set default folder</span>
+        <button id="btn-sync-join-folder" class="btn-small">Change&hellip;</button>
+      </div>
+      <div id="sync-join-warning" class="mount-warning hidden"></div>
+      <button id="btn-sync-join" class="btn-primary" disabled style="margin-top:4px;">Join Sync</button>
+      <div id="sync-join-status-msg" style="font-size:11px;color:#ff3b30;min-height:14px;"></div>
+    </section>
+
     <section id="mount-section">
       <div class="section-title">Watch Drive</div>
       <input id="key-input" type="text" placeholder="64-character hex key" spellcheck="false">
