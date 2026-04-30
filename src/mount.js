@@ -102,7 +102,7 @@ export async function watchDrive(keyHex, localFolder, { clean = false } = {}) {
     if (disconnectTimer) { clearTimeout(disconnectTimer); disconnectTimer = null }
     conn.on('close', () => {
       if (swarm.connections.size === 0)
-        disconnectTimer = setTimeout(() => process.exit(0), 120000)
+        disconnectTimer = setTimeout(() => process.exit(0), 30000)
     })
   })
 
