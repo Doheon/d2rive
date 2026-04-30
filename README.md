@@ -8,8 +8,6 @@ P2P folder sync over [Autobase](https://github.com/holepunchto/autobase) — sha
 
 macOS (Apple Silicon / Intel), Linux, Windows — download the installer for your platform from the link above.
 
-<img src="docs/screenshot.png" width="400" alt="d2rive menubar app">
-
 ---
 
 ## Requirements (CLI / dev)
