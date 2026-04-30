@@ -309,6 +309,8 @@ function registerIPC() {
     catch (err) { return { error: err.message } }
   })
 
+  ipcMain.handle('app:default-folder', (_, keyHex) => path.join(os.homedir(), 'd2rive', keyHex.slice(0, 8)))
+
   ipcMain.handle('app:open-in-finder', async (_, { path: p }) => shell.showItemInFolder(p))
 
   ipcMain.handle('app:get-auto-start', () => app.getLoginItemSettings().openAtLogin)

@@ -1,7 +1,5 @@
 'use strict'
 const { contextBridge, ipcRenderer } = require('electron')
-const { homedir } = require('os')
-const path = require('path')
 
 contextBridge.exposeInMainWorld('api', {
   pickFolder:        ()                         => ipcRenderer.invoke('dialog:pick-folder'),
@@ -13,7 +11,7 @@ contextBridge.exposeInMainWorld('api', {
   saveDrive:         (name, key, folder)        => ipcRenderer.invoke('drive:save', { name, key, folder }),
   forgetDrive:       (name)                     => ipcRenderer.invoke('drive:forget', { name }),
   folderInfo:        (p)                        => ipcRenderer.invoke('app:folder-info', { path: p }),
-  getDefaultFolder:  (keyHex)                   => path.join(homedir(), 'd2rive', keyHex.slice(0, 8)),
+  getDefaultFolder:  (keyHex)                   => ipcRenderer.invoke('app:default-folder', keyHex),
   openInFinder:      (p)                        => ipcRenderer.invoke('app:open-in-finder', { path: p }),
   getAutoStart:      ()                         => ipcRenderer.invoke('app:get-auto-start'),
   setAutoStart:      (enabled)                  => ipcRenderer.invoke('app:set-auto-start', enabled),

@@ -112,7 +112,7 @@ document.getElementById('key-input').addEventListener('input', async () => {
   document.getElementById('btn-connect').textContent = 'Watch'
 
   if (/^[0-9a-f]{64}$/i.test(key) && state.mountPathIsDefault) {
-    const p = api.getDefaultFolder(key)
+    const p = await api.getDefaultFolder(key)
     state.mountSelectedPath = p
     document.getElementById('mount-path-label').textContent = p.replace(/^\/Users\/[^/]+/, '~')
   } else if (!/^[0-9a-f]{64}$/i.test(key) && state.mountPathIsDefault) {
