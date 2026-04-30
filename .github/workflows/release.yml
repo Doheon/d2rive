@@ -47,6 +47,8 @@ jobs:
       - name: Upload artifacts
         uses: softprops/action-gh-release@v2
         with:
+          name: d2rive ${{ github.ref_name }}
+          fail_on_unmatched_files: false
           files: |
             app/dist/*.dmg
             app/dist/*.AppImage

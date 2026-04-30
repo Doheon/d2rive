@@ -25,52 +25,91 @@ function render() {
 
 function renderMounts() {
   const el = document.getElementById('mounts-list')
+  el.innerHTML = ''
   if (!state.activeMounts.length) {
-    el.innerHTML = '<div class="empty-hint">No active sessions</div>'
+    const hint = document.createElement('div')
+    hint.className = 'empty-hint'
+    hint.textContent = 'No active sessions'
+    el.appendChild(hint)
     return
   }
-  el.innerHTML = state.activeMounts.map(m => {
-    const dotClass = `dot-${m.status}`
-    const label = m.mountpoint.replace(/^\/Users\/[^/]+/, '~')
+  for (const m of state.activeMounts) {
+    const row = document.createElement('div')
+    row.className = 'mount-row'
+
+    const dot = document.createElement('div')
+    dot.className = `mount-dot dot-${m.status}`
+
+    const pathSpan = document.createElement('span')
+    pathSpan.className = 'mount-path'
+    pathSpan.title = m.mountpoint
+    pathSpan.textContent = m.mountpoint.replace(/^\/Users\/[^/]+/, '~')
+
     const badge = m.type === 'share'
       ? (m.writable ? 'sharing · writable' : 'sharing · read-only')
-      : m.type === 'sync'
-        ? 'syncing'
-        : 'watching'
-    const mp = m.mountpoint.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
-    return `
-      <div class="mount-row">
-        <div class="mount-dot ${dotClass}"></div>
-        <span class="mount-path" title="${m.mountpoint}">${label}</span>
-        <span class="mount-type-badge">${badge}</span>
-        <button class="btn-small" onclick="api.openInFinder('${mp}')">Open</button>
-        <button class="btn-danger" onclick="onStop('${mp}')">Stop</button>
-      </div>`
-  }).join('')
+      : m.type === 'sync' ? 'syncing' : 'watching'
+    const badgeSpan = document.createElement('span')
+    badgeSpan.className = 'mount-type-badge'
+    badgeSpan.textContent = badge
+
+    const openBtn = document.createElement('button')
+    openBtn.className = 'btn-small'
+    openBtn.textContent = 'Open'
+    openBtn.addEventListener('click', () => api.openInFinder(m.mountpoint))
+
+    const stopBtn = document.createElement('button')
+    stopBtn.className = 'btn-danger'
+    stopBtn.textContent = 'Stop'
+    stopBtn.addEventListener('click', () => onStop(m.mountpoint))
+
+    row.append(dot, pathSpan, badgeSpan, openBtn, stopBtn)
+    el.appendChild(row)
+  }
 }
 
 function renderSaved() {
   const el = document.getElementById('saved-list')
+  el.innerHTML = ''
   if (!state.savedDrives.length) {
-    el.innerHTML = '<div class="empty-hint">No saved drives</div>'
+    const hint = document.createElement('div')
+    hint.className = 'empty-hint'
+    hint.textContent = 'No saved drives'
+    el.appendChild(hint)
     return
   }
-  el.innerHTML = state.savedDrives.map(d => {
-    const folderLabel = d.folder ? d.folder.replace(/^\/Users\/[^/]+/, '~') : ''
-    const folderHint = folderLabel ? `<span class="saved-folder">${folderLabel}</span>` : ''
-    const escapedKey = d.key
-    const escapedFolder = (d.folder || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")
-    const escapedName = d.name.replace(/'/g, "\\'")
-    return `
-    <div class="saved-row">
-      <div class="saved-info">
-        <span class="saved-name" title="${d.key}">${d.name}</span>
-        ${folderHint}
-      </div>
-      <button class="btn-small" onclick="onWatchSaved(this, '${escapedKey}', '${escapedFolder}')">Watch</button>
-      <button class="btn-danger" onclick="onForget('${escapedName}')">Remove</button>
-    </div>`
-  }).join('')
+  for (const d of state.savedDrives) {
+    const row = document.createElement('div')
+    row.className = 'saved-row'
+
+    const info = document.createElement('div')
+    info.className = 'saved-info'
+
+    const nameSpan = document.createElement('span')
+    nameSpan.className = 'saved-name'
+    nameSpan.title = d.key
+    nameSpan.textContent = d.name
+    info.appendChild(nameSpan)
+
+    if (d.folder) {
+      const folderSpan = document.createElement('span')
+      folderSpan.className = 'saved-folder'
+      folderSpan.textContent = d.folder.replace(/^\/Users\/[^/]+/, '~')
+      info.appendChild(folderSpan)
+    }
+
+    const watchBtn = document.createElement('button')
+    watchBtn.className = 'btn-small'
+    watchBtn.textContent = 'Watch'
+    watchBtn.addEventListener('click', () => onWatchSaved(watchBtn, d.key, d.folder || ''))
+
+    const removeBtn = document.createElement('button')
+    removeBtn.className = 'btn-danger'
+    removeBtn.textContent = 'Remove'
+    removeBtn.addEventListener('click', () => onForget(d.name))
+
+    row.append(info, watchBtn, removeBtn)
+    el.appendChild(row)
+  }
 }
 
 // ── Share ─────────────────────────────────────────────────────────────────────
@@ -299,8 +338,6 @@ api.onMountStatus(({ mountpoint, status }) => {
   if (m) { m.status = status; renderMounts() }
   else refresh()
 })
-
-api.onLog(() => {})
 
 // ── Auto-start ────────────────────────────────────────────────────────────────
 

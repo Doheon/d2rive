@@ -1,4 +1,6 @@
 'use strict'
+process.on('unhandledRejection', (err) => { console.error('[unhandledRejection]', err) })
+process.on('uncaughtException', (err) => { console.error('[uncaughtException]', err) })
 const { app, ipcMain, dialog, shell, Tray, BrowserWindow, nativeImage, screen } = require('electron')
 const { execSync } = require('child_process')
 const path = require('path')
@@ -76,6 +78,7 @@ async function loadLibs() {
 
 let tray, win
 let dialogOpen = false
+let quitting = false
 
 function createTray() {
   const icon = nativeImage.createFromPath(path.join(__dirname, '../assets/trayTemplate.png'))
@@ -140,13 +143,21 @@ function toggleWindow(trayBounds) {
 registerIPC()
 
 app.whenReady().then(async () => {
-  await loadLibs()
+  try {
+    await loadLibs()
+  } catch (err) {
+    dialog.showErrorBox('d2rive failed to start', err.stack || err.message)
+    app.exit(1)
+    return
+  }
   if (app.dock) app.dock.hide()
   createTray()
   createWindow()
   discoverMounts()
 
   app.on('before-quit', async (e) => {
+    if (quitting) return
+    quitting = true
     e.preventDefault()
     await mounts.cleanupAll()
     app.exit(0)
@@ -205,7 +216,8 @@ function registerIPC() {
         syncLib.joinSync(rawKey, localFolder, {
           onLog: logToRenderer,
           onStatus: (status) => mounts.setStatus(localFolder, status),
-          onDisconnect: () => mounts.removeMount(localFolder).catch(() => {})
+          onDisconnect: () => mounts.removeMount(localFolder).catch(() => {}),
+          clean
         }),
         new Promise((_, rej) => setTimeout(() => rej(new Error('Timed out connecting')), 60000))
       ])
@@ -269,5 +281,5 @@ function registerIPC() {
     return { ok: true }
   })
 
-  ipcMain.handle('app:quit', async () => { await mounts.cleanupAll(); app.exit(0) })
+  ipcMain.handle('app:quit', () => app.quit())
 }

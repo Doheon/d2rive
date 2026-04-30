@@ -30,6 +30,10 @@
     "appId": "com.doheon.d2rive",
     "productName": "d2rive",
     "copyright": "Copyright © 2025",
+    "asarUnpack": [
+      "**/*.node",
+      "**/node_modules/{sodium-native,sodium-secretstream,sodium-universal,udx-native}/**"
+    ],
     "files": [
       "main/**/*",
       "renderer/**/*",

@@ -3,9 +3,10 @@ import Hyperbee from 'hyperbee'
 import Corestore from 'corestore'
 import Hyperswarm from 'hyperswarm'
 import b4a from 'b4a'
+import { createHash } from 'crypto'
 import { homedir } from 'os'
 import { join, dirname, relative } from 'path'
-import { mkdir, readdir, readFile, writeFile, stat, utimes } from 'fs/promises'
+import { mkdir, readdir, readFile, writeFile, stat, utimes, rm } from 'fs/promises'
 import { watch as fsWatch } from 'fs'
 
 const CHUNK_SIZE = 512 * 1024 // 512 KB per Hypercore block
@@ -160,7 +161,8 @@ function startLocalWatcher(folderPath, base, dataCore, view, writingFiles, log) 
 
 export async function createSync(folderPath, { writable = true, onLog, onStatus } = {}) {
   const log = (t) => { console.log(t); if (onLog) onLog(t) }
-  const storageDir = join(homedir(), '.d2rive', 'sync-' + Date.now())
+  const folderHash = createHash('sha256').update(folderPath).digest('hex').slice(0, 16)
+  const storageDir = join(homedir(), '.d2rive', 'share-' + folderHash)
   const store = new Corestore(storageDir)
   const dataCore = store.get({ name: 'data' })
   await dataCore.ready()
@@ -210,10 +212,10 @@ export async function createSync(folderPath, { writable = true, onLog, onStatus 
   }
 }
 
-export async function joinSync(keyHex, localFolder, { onLog, onStatus, onDisconnect } = {}) {
+export async function joinSync(keyHex, localFolder, { onLog, onStatus, onDisconnect, clean = false } = {}) {
   const log = (t) => { console.log(t); if (onLog) onLog(t) }
   const bootstrapKey = b4a.from(keyHex, 'hex')
-  const storageDir = join(homedir(), '.d2rive', 'sync-' + keyHex.slice(0, 8) + '-' + Date.now())
+  const storageDir = join(homedir(), '.d2rive', 'watch-' + keyHex.slice(0, 16))
   const store = new Corestore(storageDir)
   const dataCore = store.get({ name: 'data' })
   await dataCore.ready()
@@ -236,7 +238,6 @@ export async function joinSync(keyHex, localFolder, { onLog, onStatus, onDisconn
         log('Lost connection to all peers. Reconnecting...')
         disconnectTimer = setTimeout(() => {
           if (typeof onDisconnect === 'function') onDisconnect()
-          else process.exit(0)
         }, 30000)
       }
     })
@@ -257,6 +258,9 @@ export async function joinSync(keyHex, localFolder, { onLog, onStatus, onDisconn
   const cfg = await base.view.get('/.d2rive-config').catch(() => null)
   const isWritable = cfg ? (cfg.value.writable !== false) : true
 
+  if (clean) {
+    await rm(localFolder, { recursive: true, force: true })
+  }
   await mkdir(localFolder, { recursive: true })
 
   if (isWritable) {
