@@ -42,6 +42,12 @@ section {
   color: #888;
 }
 
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 /* Active mounts */
 .mount-row {
   display: flex;
@@ -263,41 +269,6 @@ section {
   min-height: 14px;
 }
 
-/* Name dialog */
-.name-dialog-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.25);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-.name-dialog-box {
-  background: #fff;
-  border-radius: 10px;
-  padding: 16px;
-  width: 260px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
-}
-.name-dialog-label { font-size: 13px; font-weight: 500; }
-.name-dialog-input {
-  width: 100%;
-  padding: 6px 8px;
-  border: 1px solid #d1d1d6;
-  border-radius: 6px;
-  font-family: inherit;
-  font-size: 13px;
-  outline: none;
-  box-sizing: border-box;
-}
-.name-dialog-input:focus { border-color: #007aff; }
-.name-dialog-btns { display: flex; gap: 6px; justify-content: flex-end; }
-.name-dialog-btns .btn-primary,
-.name-dialog-btns .btn-secondary { width: auto; padding: 6px 14px; }
 
 /* Saved drives */
 .saved-row {

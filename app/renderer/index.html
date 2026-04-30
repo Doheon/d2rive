@@ -43,18 +43,21 @@
       <div id="mount-warning" class="mount-warning hidden"></div>
       <button id="btn-connect" class="btn-primary" disabled>Watch</button>
       <div id="mount-status-msg"></div>
-      <div id="watch-save-card" class="info-card hidden">
-        <div class="card-label">Save for quick access?</div>
-        <input id="watch-save-name" type="text" placeholder="Name this drive" spellcheck="false">
-        <div class="btn-row">
-          <button id="btn-watch-save" class="btn-primary">Save</button>
-          <button id="btn-watch-save-dismiss" class="btn-secondary">Dismiss</button>
-        </div>
-      </div>
     </section>
 
     <section id="saved-section">
-      <div class="section-title">Saved Drives</div>
+      <div class="section-header">
+        <div class="section-title">Saved Drives</div>
+        <button id="btn-saved-add" class="btn-small">Add</button>
+      </div>
+      <div id="saved-add-card" class="info-card hidden">
+        <input id="saved-add-name" type="text" placeholder="Name" spellcheck="false">
+        <input id="saved-add-key" type="text" placeholder="64-character hex key" spellcheck="false" style="font-family:'SF Mono',Menlo,monospace;font-size:11px;">
+        <div class="btn-row">
+          <button id="btn-saved-add-save" class="btn-primary">Save</button>
+          <button id="btn-saved-add-cancel" class="btn-secondary">Cancel</button>
+        </div>
+      </div>
       <div id="saved-list"><div class="empty-hint">No saved drives</div></div>
     </section>
 
@@ -66,16 +69,6 @@
       <button id="btn-quit" class="btn-secondary">Quit</button>
     </footer>
   </div>
-  <div id="name-dialog" class="name-dialog-overlay hidden">
-    <div class="name-dialog-box">
-      <div class="name-dialog-label">Save drive as:</div>
-      <input id="name-dialog-input" type="text" class="name-dialog-input" spellcheck="false">
-      <div class="name-dialog-btns">
-        <button id="name-dialog-cancel" class="btn-secondary">Cancel</button>
-        <button id="name-dialog-ok" class="btn-primary">Save</button>
-      </div>
-    </div>
-  </div>
-  <script src="renderer.js"></script>
+<script src="renderer.js"></script>
 </body>
 </html>

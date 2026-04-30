@@ -7,9 +7,7 @@ let state = {
   pendingShareKey: null,
   mountSelectedPath: null,
   mountPathIsDefault: true,
-  mountNeedsClean: false,
-  pendingWatchKey: null,
-  pendingWatchFolder: null
+  mountNeedsClean: false
 }
 
 async function refresh() {
@@ -36,16 +34,12 @@ function renderMounts() {
       ? (m.writable ? 'sharing · writable' : 'sharing · read-only')
       : 'watching'
     const mp = m.mountpoint.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
-    const saveBtn = m.type === 'watch' && m.key
-      ? `<button class="btn-small" onclick="onSaveMount('${mp}', '${m.key}')">Save</button>`
-      : ''
     return `
       <div class="mount-row">
         <div class="mount-dot ${dotClass}"></div>
         <span class="mount-path" title="${m.mountpoint}">${label}</span>
         <span class="mount-type-badge">${badge}</span>
         <button class="btn-small" onclick="api.openInFinder('${mp}')">Open</button>
-        ${saveBtn}
         <button class="btn-danger" onclick="onStop('${mp}')">Stop</button>
       </div>`
   }).join('')
@@ -176,10 +170,6 @@ document.getElementById('btn-connect').addEventListener('click', async () => {
     return
   }
 
-  // Success — store pending save info
-  state.pendingWatchKey = key
-  state.pendingWatchFolder = mountpoint
-
   // Reset inputs
   document.getElementById('key-input').value = ''
   document.getElementById('mount-path-label').textContent = 'Enter key to set default folder'
@@ -190,31 +180,9 @@ document.getElementById('btn-connect').addEventListener('click', async () => {
   btn.textContent = 'Watch'
   msg.textContent = ''
   updateWatchBtns()
-
-  // Show save card
-  document.getElementById('watch-save-card').classList.remove('hidden')
-  document.getElementById('watch-save-name').focus()
-
   await refresh()
 })
 
-document.getElementById('btn-watch-save').addEventListener('click', async () => {
-  const name = document.getElementById('watch-save-name').value.trim()
-  if (!name) return
-  await api.saveDrive(name, state.pendingWatchKey, state.pendingWatchFolder)
-  document.getElementById('watch-save-card').classList.add('hidden')
-  document.getElementById('watch-save-name').value = ''
-  state.pendingWatchKey = null
-  state.pendingWatchFolder = null
-  await refresh()
-})
-
-document.getElementById('btn-watch-save-dismiss').addEventListener('click', () => {
-  document.getElementById('watch-save-card').classList.add('hidden')
-  document.getElementById('watch-save-name').value = ''
-  state.pendingWatchKey = null
-  state.pendingWatchFolder = null
-})
 
 function friendlyError(err) {
   if (err.includes('ENOENT')) return 'Folder not found — please select a valid folder'
@@ -228,14 +196,6 @@ function friendlyError(err) {
 
 function onStop(mountpoint) {
   api.stopWatch(mountpoint).then(() => refresh())
-}
-
-async function onSaveMount(mountpoint, key) {
-  const name = await showNameDialog(mountpoint.split('/').pop() || '')
-  if (!name) return
-  const r = await api.saveDrive(name, key, mountpoint)
-  if (r.error) { alert('Save failed: ' + r.error); return }
-  await refresh()
 }
 
 // ── Saved drives ──────────────────────────────────────────────────────────────
@@ -267,38 +227,30 @@ async function onForget(name) {
   await refresh()
 }
 
-// ── Name dialog ───────────────────────────────────────────────────────────────
+// ── Add saved drive ───────────────────────────────────────────────────────────
 
-function showNameDialog(defaultName) {
-  return new Promise(resolve => {
-    const overlay = document.getElementById('name-dialog')
-    const input = document.getElementById('name-dialog-input')
-    input.value = defaultName
-    overlay.classList.remove('hidden')
-    input.focus()
-    input.select()
+document.getElementById('btn-saved-add').addEventListener('click', () => {
+  document.getElementById('saved-add-card').classList.remove('hidden')
+  document.getElementById('saved-add-name').focus()
+})
 
-    const btnOk = document.getElementById('name-dialog-ok')
-    const btnCancel = document.getElementById('name-dialog-cancel')
+document.getElementById('btn-saved-add-cancel').addEventListener('click', () => {
+  document.getElementById('saved-add-card').classList.add('hidden')
+  document.getElementById('saved-add-name').value = ''
+  document.getElementById('saved-add-key').value = ''
+})
 
-    function finish(val) {
-      overlay.classList.add('hidden')
-      btnOk.removeEventListener('click', onOk)
-      btnCancel.removeEventListener('click', onCancel)
-      input.onkeydown = null
-      resolve(val)
-    }
-    function onOk() { finish(input.value.trim() || null) }
-    function onCancel() { finish(null) }
-
-    btnOk.addEventListener('click', onOk)
-    btnCancel.addEventListener('click', onCancel)
-    input.onkeydown = e => {
-      if (e.key === 'Enter') onOk()
-      if (e.key === 'Escape') onCancel()
-    }
-  })
-}
+document.getElementById('btn-saved-add-save').addEventListener('click', async () => {
+  const name = document.getElementById('saved-add-name').value.trim()
+  const key  = document.getElementById('saved-add-key').value.trim()
+  if (!name || !/^[0-9a-f]{64}$/i.test(key)) return
+  const r = await api.saveDrive(name, key, null)
+  if (r.error) { alert('Save failed: ' + r.error); return }
+  document.getElementById('saved-add-card').classList.add('hidden')
+  document.getElementById('saved-add-name').value = ''
+  document.getElementById('saved-add-key').value = ''
+  await refresh()
+})
 
 // ── Push events ───────────────────────────────────────────────────────────────
 
