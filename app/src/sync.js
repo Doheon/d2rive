@@ -82,12 +82,13 @@ async function apply(nodes, view, host) {
 
 async function appendChunked(dataCore, data) {
   const chunks = []
-  for (let i = 0; i < data.length; i += CHUNK_SIZE) {
-    chunks.push(data.slice(i, i + CHUNK_SIZE))
-  }
+  for (let i = 0; i < data.length; i += CHUNK_SIZE) chunks.push(data.slice(i, i + CHUNK_SIZE))
   if (chunks.length === 0) chunks.push(Buffer.alloc(0))
-  const startSeq = dataCore.length
-  for (const chunk of chunks) await dataCore.append(chunk)
+  // Append all chunks in a single atomic call so startSeq is correct even under
+  // concurrent uploads — Hypercore serializes internally, and length is read
+  // after the append so it reflects the actual positions written.
+  await dataCore.append(chunks)
+  const startSeq = dataCore.length - chunks.length
   return { startSeq, numChunks: chunks.length }
 }
 
@@ -158,33 +159,39 @@ async function uploadLocalFiles(folderPath, base, dataCore, view, log, isIgnored
 
 function startLocalWatcher(folderPath, base, dataCore, view, writingFiles, log, isIgnored) {
   const debounce = new Map()
+  // Serialize all uploads to prevent concurrent appendChunked on the same dataCore
+  let uploadTail = Promise.resolve()
+  const enqueue = (fn) => { uploadTail = uploadTail.then(fn).catch(() => {}) }
+
   const watcher = fsWatch(folderPath, { recursive: true }, (_, filename) => {
     if (!filename) return
     const relPath = '/' + filename.replace(/\\/g, '/')
     if (writingFiles.has(relPath)) return
     if (isIgnored && isIgnored(relPath)) return
     clearTimeout(debounce.get(relPath))
-    debounce.set(relPath, setTimeout(async () => {
+    debounce.set(relPath, setTimeout(() => {
       debounce.delete(relPath)
-      const absPath = join(folderPath, filename)
-      try {
-        const s = await stat(absPath)
-        const cur = await view.get(relPath).catch(() => null)
-        if (cur && Math.abs(cur.value.mtime - s.mtimeMs) < 50 && cur.value.size === s.size) return
-        const data = await readFile(absPath)
-        const { startSeq, numChunks } = await appendChunked(dataCore, data)
-        await base.append(JSON.stringify({
-          type: 'put', path: relPath,
-          mtime: s.mtimeMs, size: s.size,
-          coreKey: dataCore.key.toString('hex'), startSeq, numChunks
-        }))
-        log(`  ↑ ${relPath}`)
-      } catch {
-        const cur = await view.get(relPath).catch(() => null)
-        if (!cur) return
-        await base.append(JSON.stringify({ type: 'del', path: relPath, mtime: Date.now() }))
-        log(`  ✕ ${relPath}`)
-      }
+      enqueue(async () => {
+        const absPath = join(folderPath, filename)
+        try {
+          const s = await stat(absPath)
+          const cur = await view.get(relPath).catch(() => null)
+          if (cur && Math.abs(cur.value.mtime - s.mtimeMs) < 50 && cur.value.size === s.size) return
+          const data = await readFile(absPath)
+          const { startSeq, numChunks } = await appendChunked(dataCore, data)
+          await base.append(JSON.stringify({
+            type: 'put', path: relPath,
+            mtime: s.mtimeMs, size: s.size,
+            coreKey: dataCore.key.toString('hex'), startSeq, numChunks
+          }))
+          log(`  ↑ ${relPath}`)
+        } catch {
+          const cur = await view.get(relPath).catch(() => null)
+          if (!cur) return
+          await base.append(JSON.stringify({ type: 'del', path: relPath, mtime: Date.now() }))
+          log(`  ✕ ${relPath}`)
+        }
+      })
     }, 200))
   })
   return watcher
