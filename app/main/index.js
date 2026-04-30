@@ -181,7 +181,7 @@ function registerIPC() {
             const key = m[1]
             mounts.addMount({
               mountpoint: folderPath, key, type: 'share', status: 'connected',
-              cleanup: makeCleanup(child, folderPath || mountpoint)
+              cleanup: makeCleanup(child, folderPath)
             })
             resolve({ key })
           }
@@ -209,7 +209,7 @@ function registerIPC() {
             done = true
             mounts.addMount({
               mountpoint, key: keyHex, type: 'mount', status: 'connected',
-              cleanup: makeCleanup(child, folderPath || mountpoint)
+              cleanup: makeCleanup(child, mountpoint)
             })
             resolve({ ok: true })
           }
@@ -225,7 +225,7 @@ function registerIPC() {
           done = true
           mounts.addMount({
             mountpoint, key: keyHex, type: 'mount', status: 'connecting',
-            cleanup: makeCleanup(child, folderPath || mountpoint)
+            cleanup: makeCleanup(child, mountpoint)
           })
           resolve({ ok: true })
         }
