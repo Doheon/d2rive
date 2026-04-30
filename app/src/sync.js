@@ -210,7 +210,7 @@ export async function createSync(folderPath, { writable = true, onLog, onStatus 
   }
 }
 
-export async function joinSync(keyHex, localFolder, { onLog, onStatus } = {}) {
+export async function joinSync(keyHex, localFolder, { onLog, onStatus, onDisconnect } = {}) {
   const log = (t) => { console.log(t); if (onLog) onLog(t) }
   const bootstrapKey = b4a.from(keyHex, 'hex')
   const storageDir = join(homedir(), '.d2rive', 'sync-' + keyHex.slice(0, 8) + '-' + Date.now())
@@ -234,7 +234,10 @@ export async function joinSync(keyHex, localFolder, { onLog, onStatus } = {}) {
       if (swarm.connections.size === 0) {
         wasDisconnected = true
         log('Lost connection to all peers. Reconnecting...')
-        disconnectTimer = setTimeout(() => process.exit(0), 30000)
+        disconnectTimer = setTimeout(() => {
+          if (typeof onDisconnect === 'function') onDisconnect()
+          else process.exit(0)
+        }, 30000)
       }
     })
   })
@@ -291,6 +294,7 @@ export async function joinSync(keyHex, localFolder, { onLog, onStatus } = {}) {
   log(`Running... (${base.writable ? 'writable' : 'read-only'})`)
 
   return {
+    writable: base.writable,
     cleanup: async () => {
       if (disconnectTimer) clearTimeout(disconnectTimer)
       if (watcher) try { watcher.close() } catch {}

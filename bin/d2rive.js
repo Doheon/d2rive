@@ -1,10 +1,7 @@
 #!/usr/bin/env node
-import {
-  pullFile, driveInfo,
-  cacheInfo, cacheClear, fmtBytes, syncFromDrive
-} from '../src/mount.js'
-import { createSync, joinSync } from '../src/sync.js'
-import { saveDrive, removeDrive, listDrives, resolveKey } from '../src/drives.js'
+import { pullFile, driveInfo, cacheInfo, cacheClear, fmtBytes, syncFromDrive } from '../app/src/mount.js'
+import { createSync, joinSync } from '../app/src/sync.js'
+import { saveDrive, removeDrive, listDrives, resolveKey } from '../app/src/drives.js'
 
 
 if (process.platform === 'win32') {

@@ -4,14 +4,61 @@
   "description": "d2rive menubar app",
   "main": "main/index.js",
   "type": "commonjs",
-  "bin": {
-    "d2rive-app": "bin/d2rive-app.js"
-  },
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "build": "electron-builder --publish never",
+    "build:mac": "electron-builder --mac --publish never",
+    "build:win": "electron-builder --win --publish never",
+    "build:linux": "electron-builder --linux --publish never",
+    "dist": "electron-builder --publish always"
   },
-  "dependencies": {},
+  "dependencies": {
+    "autobase": "^7.27.3",
+    "b4a": "^1.6.7",
+    "corestore": "^7.0.0",
+    "hyperbee": "^2.27.3",
+    "hyperdrive": "^11.11.0",
+    "hyperswarm": "^4.8.4",
+    "localdrive": "^2.2.1",
+    "picomatch": "^4.0.4"
+  },
   "devDependencies": {
-    "electron": "^41.0.0"
+    "electron": "^41.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.doheon.d2rive",
+    "productName": "d2rive",
+    "copyright": "Copyright © 2025",
+    "files": [
+      "main/**/*",
+      "renderer/**/*",
+      "assets/**/*",
+      "src/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": [
+        { "target": "dmg", "arch": ["universal"] }
+      ],
+      "icon": "assets/icon.icns"
+    },
+    "linux": {
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] }
+      ],
+      "category": "Utility",
+      "icon": "assets/icon.png"
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }

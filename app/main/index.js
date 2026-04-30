@@ -1,34 +1,11 @@
 'use strict'
 const { app, ipcMain, dialog, shell, Tray, BrowserWindow, nativeImage, screen } = require('electron')
-const { spawn, execSync } = require('child_process')
+const { execSync } = require('child_process')
 const path = require('path')
 const os = require('os')
 const { readdir } = require('fs/promises')
+const { pathToFileURL } = require('url')
 const mounts = require('./mounts')
-
-const BIN = path.resolve(__dirname, '../../bin/d2rive.js')
-
-function findNode() {
-  const candidates = [
-    process.env.NODE_BINARY,
-    '/opt/homebrew/bin/node',
-    '/usr/local/bin/node',
-    '/usr/bin/node',
-  ].filter(Boolean)
-  for (const p of candidates) {
-    try { execSync(`"${p}" --version`, { stdio: 'ignore' }); return p } catch {}
-  }
-  return 'node'
-}
-const NODE = findNode()
-
-function makeCleanup(child) {
-  return () => new Promise(res => {
-    child.kill('SIGTERM')
-    const timer = setTimeout(() => { child.kill('SIGKILL'); res() }, 3000)
-    child.once('exit', () => { clearTimeout(timer); res() })
-  })
-}
 
 function makeCleanupByPid(pid) {
   return () => new Promise(res => {
@@ -91,38 +68,10 @@ function discoverMounts() {
   } catch {}
 }
 
-let drivesLib
+let syncLib, drivesLib
 async function loadLibs() {
-  drivesLib = await import(path.resolve(__dirname, '../../src/drives.js'))
-}
-
-function spawnD2rive(args, { onLine, onStderr, onExit } = {}) {
-  const child = spawn(NODE, [BIN, ...args], { env: { ...process.env } })
-
-  let buf = ''
-  child.stdout.on('data', chunk => {
-    buf += chunk.toString()
-    const lines = buf.split('\n')
-    buf = lines.pop()
-    for (const line of lines) {
-      if (!line.trim()) continue
-      const win = mounts.getWindow()
-      if (win && !win.isDestroyed()) win.webContents.send('log:line', { text: line, level: 'info' })
-      if (onLine) onLine(line)
-    }
-  })
-
-  child.stderr.on('data', chunk => {
-    for (const line of chunk.toString().split('\n')) {
-      if (!line.trim()) continue
-      const win = mounts.getWindow()
-      if (win && !win.isDestroyed()) win.webContents.send('log:line', { text: line, level: 'error' })
-      if (onStderr) onStderr(line)
-    }
-  })
-
-  if (onExit) child.on('exit', onExit)
-  return child
+  syncLib = await import(pathToFileURL(path.join(__dirname, '../src/sync.js')).href)
+  drivesLib = await import(pathToFileURL(path.join(__dirname, '../src/drives.js')).href)
 }
 
 let tray, win
@@ -217,66 +166,61 @@ function registerIPC() {
   })
 
   ipcMain.handle('drive:share-folder', async (_, { folderPath, writable }) => {
-    const spawnArgs = writable ? ['share', '--write', folderPath] : ['share', folderPath]
-    return new Promise((resolve) => {
-      let done = false
-      const child = spawnD2rive(spawnArgs, {
-        onLine(line) {
-          if (done) {
-            if (line.includes('Lost connection')) mounts.setStatus(folderPath, 'disconnected')
-            else if (line.includes('Reconnected')) mounts.setStatus(folderPath, 'connected')
-            return
-          }
-          const m = line.match(/Sync key:\s+([0-9a-f]{64})/i)
-          if (m) {
-            done = true
-            const key = 'sync:' + m[1]
-            mounts.addMount({ mountpoint: folderPath, key, type: writable ? 'sync' : 'share', status: 'connected', writable: !!writable, cleanup: makeCleanup(child) })
-            resolve({ key })
-          }
-        },
-        onExit(code) {
-          if (!done) { done = true; resolve({ error: `Process exited (code ${code})` }) }
-          else mounts.removeMount(folderPath)
-        }
+    const win = mounts.getWindow()
+    const logToRenderer = (text) => {
+      if (win && !win.isDestroyed()) win.webContents.send('log:line', { text, level: 'info' })
+    }
+    try {
+      const result = await Promise.race([
+        syncLib.createSync(folderPath, {
+          writable,
+          onLog: logToRenderer,
+          onStatus: (status) => mounts.setStatus(folderPath, status)
+        }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('Timed out waiting for sync key')), 30000))
+      ])
+      const fullKey = 'sync:' + result.key
+      mounts.addMount({
+        mountpoint: folderPath,
+        key: fullKey,
+        type: writable ? 'sync' : 'share',
+        status: 'connected',
+        writable,
+        cleanup: result.cleanup
       })
-      setTimeout(() => { if (!done) { done = true; resolve({ error: 'Timed out waiting for sync key' }) } }, 30000)
-    })
+      return { key: fullKey }
+    } catch (err) {
+      return { error: err.message }
+    }
   })
 
-  ipcMain.handle('drive:watch', async (_, { keyHex, localFolder }) => {
+  ipcMain.handle('drive:watch', async (_, { keyHex, localFolder, clean }) => {
     const rawKey = keyHex.startsWith('sync:') ? keyHex.slice(5) : keyHex
-    return new Promise((resolve) => {
-      let done = false
-      let stderrLines = []
-      const child = spawnD2rive(['watch', rawKey, localFolder], {
-        onLine(line) {
-          if (done) {
-            if (line.includes('Lost connection')) mounts.setStatus(localFolder, 'disconnected')
-            else if (line.includes('Reconnected')) mounts.setStatus(localFolder, 'connected')
-            return
-          }
-          if (line.includes('Running...')) {
-            done = true
-            const isWritable = line.includes('writable')
-            mounts.addMount({ mountpoint: localFolder, key: keyHex, type: 'sync', status: 'connected', writable: isWritable, cleanup: makeCleanup(child) })
-            resolve({ ok: true })
-          }
-        },
-        onStderr(line) { if (!done) stderrLines.push(line) },
-        onExit(code) {
-          if (!done) { done = true; resolve({ error: stderrLines.join(' ').trim() || `Process exited (code ${code})` }) }
-          else mounts.removeMount(localFolder)
-        }
+    const win = mounts.getWindow()
+    const logToRenderer = (text) => {
+      if (win && !win.isDestroyed()) win.webContents.send('log:line', { text, level: 'info' })
+    }
+    try {
+      const result = await Promise.race([
+        syncLib.joinSync(rawKey, localFolder, {
+          onLog: logToRenderer,
+          onStatus: (status) => mounts.setStatus(localFolder, status),
+          onDisconnect: () => mounts.removeMount(localFolder).catch(() => {})
+        }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('Timed out connecting')), 60000))
+      ])
+      mounts.addMount({
+        mountpoint: localFolder,
+        key: keyHex,
+        type: 'sync',
+        status: 'connected',
+        writable: result.writable,
+        cleanup: result.cleanup
       })
-      setTimeout(() => {
-        if (!done) {
-          done = true
-          mounts.addMount({ mountpoint: localFolder, key: keyHex, type: 'sync', status: 'connecting', cleanup: makeCleanup(child) })
-          resolve({ ok: true })
-        }
-      }, 25000)
-    })
+      return { ok: true }
+    } catch (err) {
+      return { error: err.message }
+    }
   })
 
   ipcMain.handle('drive:stop', async (_, { mountpoint }) => {
