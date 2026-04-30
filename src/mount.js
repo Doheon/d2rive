@@ -69,14 +69,14 @@ export async function shareFolder(folderPath, { writable = false } = {}) {
 
   await drive.put('/.d2rive-config', Buffer.from(JSON.stringify({ writable })))
 
-  const count = await syncToDrive(local, drive, ignore)
-  console.log(`Synced: +${count.add} changed:${count.change} -${count.remove}`)
-
   swarm.join(drive.discoveryKey, { server: true, client: false })
 
   const key = b4a.toString(drive.key, 'hex')
   console.log(`Drive key: ${key}`)
   console.log(`Others can watch with: d2rive watch ${key} <localFolder>`)
+
+  const count = await syncToDrive(local, drive, ignore)
+  console.log(`Synced: +${count.add} changed:${count.change} -${count.remove}`)
   console.log(`Watching ${folderPath} for changes... (${writable ? 'writable' : 'read-only'})`)
 
   watchLocal(folderPath, local, drive, ignore)
