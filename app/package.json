@@ -8,12 +8,10 @@
     "d2rive-app": "bin/d2rive-app.js"
   },
   "scripts": {
-    "start": "electron .",
-    "rebuild": "npx @electron/rebuild -f -w fuse-native --module-dir .."
+    "start": "electron ."
   },
   "dependencies": {},
   "devDependencies": {
-    "electron": "^34.0.0",
-    "@electron/rebuild": "^3.7.0"
+    "electron": "^34.0.0"
   }
 }

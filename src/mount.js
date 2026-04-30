@@ -1,11 +1,10 @@
 import Hyperdrive from 'hyperdrive'
 import Corestore from 'corestore'
 import Hyperswarm from 'hyperswarm'
-import Fuse from 'fuse-native'
 import Localdrive from 'localdrive'
 import picomatch from 'picomatch'
 import { homedir } from 'os'
-import { join, dirname, basename } from 'path'
+import { join, dirname } from 'path'
 import { mkdir, readdir, readFile, writeFile, stat, rm } from 'fs/promises'
 import { watch as fsWatch } from 'fs'
 import b4a from 'b4a'
@@ -61,50 +60,7 @@ async function connectToPeers(drive, swarm) {
   if (connected) console.log(' ready')
 }
 
-function makeCleanup(fuse, swarm, drive, store) {
-  return async () => {
-    if (fuse) await new Promise((res, rej) => fuse.unmount(e => e ? rej(e) : res()))
-    await swarm.destroy()
-    await drive.close()
-    await store.close()
-  }
-}
-
 // ── Public commands ───────────────────────────────────────────────────────────
-
-export async function createAndMount(mountpoint) {
-  const { drive, store, swarm } = await setupDrive()
-
-  swarm.join(drive.discoveryKey, { server: true, client: false })
-
-  const key = b4a.toString(drive.key, 'hex')
-  console.log(`Drive key: ${key}`)
-  console.log(`Share this key: d2rive mount ${key} <mountpoint>`)
-
-  const fuse = await doMount(drive, mountpoint, basename(mountpoint))
-
-  return { key, cleanup: makeCleanup(fuse, swarm, drive, store) }
-}
-
-export async function connectAndMount(keyHex, mountpoint) {
-  const key = b4a.from(keyHex, 'hex')
-  const { drive, store, swarm } = await setupDrive(key)
-
-  await connectToPeers(drive, swarm)
-
-  const updateInterval = setInterval(async () => {
-    try { await drive.update() } catch {}
-  }, 2000)
-
-  const fuse = await doMount(drive, mountpoint, basename(mountpoint), false)
-
-  return {
-    cleanup: async () => {
-      clearInterval(updateInterval)
-      await makeCleanup(fuse, swarm, drive, store)()
-    }
-  }
-}
 
 export async function shareFolder(folderPath) {
   const { drive, store, swarm } = await setupDrive()
@@ -118,12 +74,50 @@ export async function shareFolder(folderPath) {
 
   const key = b4a.toString(drive.key, 'hex')
   console.log(`Drive key: ${key}`)
-  console.log(`Others can mount with: d2rive mount ${key} <mountpoint>`)
+  console.log(`Others can watch with: d2rive watch ${key} <localFolder>`)
   console.log(`Watching ${folderPath} for changes...`)
 
   watchLocal(folderPath, local, drive, ignore)
 
-  return { key, cleanup: makeCleanup(null, swarm, drive, store) }
+  return {
+    key,
+    cleanup: async () => {
+      await swarm.destroy()
+      await drive.close()
+      await store.close()
+    }
+  }
+}
+
+export async function watchDrive(keyHex, localFolder) {
+  const key = b4a.from(keyHex, 'hex')
+  const { drive, store, swarm } = await setupDrive(key)
+  await connectToPeers(drive, swarm)
+
+  await mkdir(localFolder, { recursive: true })
+
+  console.log('Initial sync...')
+  await downloadAll(drive, localFolder)
+
+  console.log(`Watching for remote changes...`)
+
+  const watcher = drive.watch('/')
+  ;(async () => {
+    for await (const _ of watcher) {
+      console.log('\nRemote changed, syncing...')
+      try { await downloadAll(drive, localFolder) }
+      catch (err) { console.error(err.message) }
+    }
+  })()
+
+  return {
+    cleanup: async () => {
+      watcher.destroy()
+      await swarm.destroy()
+      await drive.close()
+      await store.close()
+    }
+  }
 }
 
 export async function pullFile(keyHex, remotePath, localPath) {
@@ -163,40 +157,12 @@ export async function driveInfo(keyHex) {
   return files
 }
 
-export function unmount(mountpoint) {
-  return new Promise((res, rej) =>
-    Fuse.unmount(mountpoint, err => err ? rej(err) : res())
-  )
-}
-
 export async function syncFromDrive(keyHex, localPath) {
   const key = b4a.from(keyHex, 'hex')
   const { drive, store, swarm } = await setupDrive(key)
   await connectToPeers(drive, swarm)
-
-  const files = []
-  for await (const entry of drive.list('/')) {
-    if (entry.key.endsWith('/.keep')) continue
-    files.push(entry.key)
-  }
-
-  const total = files.length
-  let done = 0, bytes = 0
-  for (const filePath of files) {
-    const data = await drive.get(filePath)
-    if (data) {
-      const dest = join(localPath, filePath)
-      await mkdir(dirname(dest), { recursive: true })
-      await writeFile(dest, data)
-      bytes += data.byteLength
-    }
-    done++
-    process.stdout.write(`\r  [${done}/${total}] ${filePath.slice(0, 50)}`)
-  }
-  if (total > 0) process.stdout.write('\r\x1b[K')
-  if (total === 0) console.log('Drive is empty or no files visible.')
-  else console.log(`Synced ${total} files (${fmtBytes(bytes)}) → ${localPath}`)
-
+  await mkdir(localPath, { recursive: true })
+  await downloadAll(drive, localPath)
   await swarm.destroy()
   await drive.close()
   await store.close()
@@ -234,7 +200,6 @@ export async function cacheClear(keyHex) {
 async function syncToDrive(local, drive, ignore) {
   const count = { add: 0, change: 0, remove: 0 }
 
-  // Collect local entries (respecting ignore)
   const entries = []
   for await (const entry of local.list('/')) {
     if (!ignore(entry.key)) entries.push(entry)
@@ -258,9 +223,8 @@ async function syncToDrive(local, drive, ignore) {
     process.stdout.write(`\r  [${done}/${total}] ${entry.key.slice(0, 50)}`)
   }
 
-  if (total > 0) process.stdout.write('\r\x1b[K') // clear progress line
+  if (total > 0) process.stdout.write('\r\x1b[K')
 
-  // Remove drive entries that no longer exist locally
   const localKeys = new Set(entries.map(e => e.key))
   for await (const entry of drive.list('/')) {
     if (!localKeys.has(entry.key)) {
@@ -270,6 +234,31 @@ async function syncToDrive(local, drive, ignore) {
   }
 
   return count
+}
+
+async function downloadAll(drive, localPath) {
+  const files = []
+  for await (const entry of drive.list('/')) {
+    if (entry.key.endsWith('/.keep')) continue
+    files.push(entry.key)
+  }
+
+  const total = files.length
+  let done = 0, bytes = 0
+  for (const filePath of files) {
+    const data = await drive.get(filePath)
+    if (data) {
+      const dest = join(localPath, filePath)
+      await mkdir(dirname(dest), { recursive: true })
+      await writeFile(dest, data)
+      bytes += data.byteLength
+    }
+    done++
+    process.stdout.write(`\r  [${done}/${total}] ${filePath.slice(0, 50)}`)
+  }
+  if (total > 0) process.stdout.write('\r\x1b[K')
+  if (total === 0) console.log('Drive is empty or no files visible yet.')
+  else console.log(`Synced ${total} files (${fmtBytes(bytes)}) → ${localPath}`)
 }
 
 function watchLocal(folderPath, local, drive, ignore) {
@@ -311,7 +300,6 @@ async function loadIgnore(folderPath) {
 export function makeIgnoreMatcher(patterns) {
   if (!patterns.length) return () => false
 
-  // Expand patterns so bare names match both the entry and everything under it
   const expanded = patterns.flatMap(p => {
     if (!p.includes('/') && !p.includes('*')) return [p, `${p}/**`]
     return [p]
@@ -340,202 +328,4 @@ export function fmtBytes(n) {
   if (n < 1024 ** 2) return `${(n / 1024).toFixed(1)} KB`
   if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MB`
   return `${(n / 1024 ** 3).toFixed(2)} GB`
-}
-
-// ── FUSE mount ────────────────────────────────────────────────────────────────
-
-async function doMount(drive, mountpoint, name, writable = true) {
-  await mkdir(mountpoint, { recursive: true })
-
-  let fdSeq = 0
-  const handles = new Map()
-
-  function statObj(isDir, size = 0) {
-    const now = new Date()
-    return {
-      mtime: now, atime: now, ctime: now,
-      nlink: isDir ? 2 : 1,
-      size: isDir ? 4096 : size,
-      mode: isDir ? 0o40755 : 0o100644,
-      uid: process.getuid(),
-      gid: process.getgid()
-    }
-  }
-
-  async function getStat(path) {
-    if (path === '/') return statObj(true)
-    for (const h of handles.values()) {
-      if (h.path === path && h.buf !== null) return statObj(false, h.buf.length)
-    }
-    const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000))
-    const entry = await Promise.race([drive.entry(path), timeout])
-    if (entry) return statObj(false, entry.value?.blob?.byteLength ?? 0)
-    for await (const _ of drive.list(path)) return statObj(true)
-    return null
-  }
-
-  const handlers = {
-    getattr(path, cb) {
-      getStat(path)
-        .then(s => s ? cb(0, s) : cb(Fuse.ENOENT))
-        .catch(() => cb(Fuse.EIO))
-    },
-
-    readdir(path, cb) {
-      const prefix = path === '/' ? '/' : path + '/'
-      const names = new Set();
-      (async () => {
-        for await (const { key } of drive.list(path)) {
-          const name = key.slice(prefix.length).split('/')[0]
-          if (name && name !== '.keep') names.add(name)
-        }
-        cb(0, [...names])
-      })().catch(() => cb(Fuse.EIO))
-    },
-
-    open(path, flags, cb) {
-      const isCreate = (flags & 0x200) !== 0  // O_CREAT on macOS
-      if (isCreate) {
-        if (!writable) return cb(Fuse.EPERM)
-        handles.set(++fdSeq, { path, buf: Buffer.alloc(0) })
-        return cb(0, fdSeq)
-      }
-      getStat(path)
-        .then(s => {
-          if (!s) return cb(Fuse.ENOENT)
-          handles.set(++fdSeq, { path, buf: null })
-          cb(0, fdSeq)
-        })
-        .catch(() => cb(Fuse.EIO))
-    },
-
-    create(path, flags, cb) {
-      if (!writable) return cb(Fuse.EPERM)
-      handles.set(++fdSeq, { path, buf: Buffer.alloc(0) })
-      cb(0, fdSeq)
-    },
-
-    read(path, fd, buf, len, pos, cb) {
-      const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000))
-      Promise.race([drive.get(path), timeout])
-        .then(data => {
-          if (!data || pos >= data.length) return cb(0)
-          const slice = data.slice(pos, pos + len)
-          slice.copy(buf)
-          cb(slice.length)
-        })
-        .catch(err => {
-          if (err.message === 'timeout') process.stderr.write(`\nRead timeout: ${path} — peer may be offline\n`)
-          cb(Fuse.EIO)
-        })
-    },
-
-    write(path, fd, buf, len, pos, cb) {
-      const handle = handles.get(fd)
-      if (!handle) return cb(Fuse.EBADF);
-      (async () => {
-        if (handle.buf === null) handle.buf = (await drive.get(path)) ?? Buffer.alloc(0)
-        const end = pos + len
-        if (end > handle.buf.length) {
-          const next = Buffer.alloc(end)
-          handle.buf.copy(next)
-          handle.buf = next
-        }
-        buf.copy(handle.buf, pos, 0, len)
-        cb(len)
-      })().catch(() => cb(Fuse.EIO))
-    },
-
-    flush(path, fd, cb) {
-      const handle = handles.get(fd)
-      if (!handle?.buf) return cb(0)
-      drive.put(path, handle.buf).then(() => cb(0)).catch(() => cb(Fuse.EIO))
-    },
-
-    release(path, fd, cb) {
-      const handle = handles.get(fd)
-      const p = handle?.buf ? drive.put(path, handle.buf) : Promise.resolve()
-      p.then(() => { handles.delete(fd); cb(0) })
-       .catch(() => { handles.delete(fd); cb(Fuse.EIO) })
-    },
-
-    truncate(path, size, cb) {
-      if (!writable) return cb(Fuse.EPERM)
-      drive.get(path)
-        .then(data => {
-          const buf = Buffer.alloc(size)
-          if (data) data.copy(buf, 0, 0, Math.min(size, data.length))
-          return drive.put(path, buf)
-        })
-        .then(() => cb(0)).catch(() => cb(Fuse.EIO))
-    },
-
-    ftruncate(path, fd, size, cb) {
-      if (!writable) return cb(Fuse.EPERM)
-      const handle = handles.get(fd)
-      if (!handle) return cb(Fuse.EBADF);
-      (async () => {
-        const data = handle.buf ?? (await drive.get(path)) ?? Buffer.alloc(0)
-        const buf = Buffer.alloc(size)
-        data.copy(buf, 0, 0, Math.min(size, data.length))
-        handle.buf = buf
-        cb(0)
-      })().catch(() => cb(Fuse.EIO))
-    },
-
-    unlink(path, cb) {
-      if (!writable) return cb(Fuse.EPERM)
-      drive.del(path).then(() => cb(0)).catch(() => cb(Fuse.EIO))
-    },
-
-    mkdir(path, mode, cb) {
-      if (!writable) return cb(Fuse.EPERM)
-      drive.put(path + '/.keep', Buffer.alloc(0))
-        .then(() => cb(0)).catch(() => cb(Fuse.EIO))
-    },
-
-    rmdir(path, cb) {
-      if (!writable) return cb(Fuse.EPERM)
-      ;(async () => {
-        for await (const { key } of drive.list(path)) await drive.del(key)
-        cb(0)
-      })().catch(() => cb(Fuse.EIO))
-    },
-
-    rename(src, dest, cb) {
-      if (!writable) return cb(Fuse.EPERM)
-      ;(async () => {
-        const data = await drive.get(src)
-        if (data !== null) {
-          await drive.put(dest, data); await drive.del(src); return cb(0)
-        }
-        const srcPrefix = src + '/'
-        for await (const { key } of drive.list(src)) {
-          const rel = key.slice(srcPrefix.length)
-          const buf = await drive.get(key)
-          if (buf !== null) await drive.put(dest + '/' + rel, buf)
-          await drive.del(key)
-        }
-        cb(0)
-      })().catch(() => cb(Fuse.EIO))
-    },
-
-    statfs(path, cb) {
-      cb(0, {
-        bsize: 1048576, frsize: 1048576,
-        blocks: 1048576, bfree: 524288, bavail: 524288,
-        files: 1000000, ffree: 900000, favail: 900000,
-        fsid: 1000000, flag: 0, namemax: 255
-      })
-    }
-  }
-
-  const fuse = new Fuse(mountpoint, handlers, {
-    force: true, mkdir: true,
-    displayFolder: true, name: name || basename(mountpoint)
-  })
-  await new Promise((res, rej) => fuse.mount(err => err ? rej(err) : res()))
-  console.log(`Mounted at ${mountpoint}`)
-
-  return fuse
 }

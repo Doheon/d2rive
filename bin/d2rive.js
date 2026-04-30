@@ -1,13 +1,12 @@
 #!/usr/bin/env node
 import {
-  createAndMount, connectAndMount, unmount,
-  shareFolder, pullFile, driveInfo,
+  shareFolder, watchDrive, pullFile, driveInfo,
   cacheInfo, cacheClear, fmtBytes, syncFromDrive
 } from '../src/mount.js'
 import { saveDrive, removeDrive, listDrives, resolveKey } from '../src/drives.js'
 
 if (process.platform === 'win32') {
-  console.error('Windows is not yet supported. FUSE on Windows requires WinFsp (https://winfsp.dev).')
+  console.error('Windows is not yet supported.')
   console.error('Contributions welcome — see CONTRIBUTING.md')
   process.exit(1)
 }
@@ -22,26 +21,12 @@ const commands = {
     onExit(cleanup)
   },
 
-  async create() {
-    const [mountpoint] = args
-    if (!mountpoint) usage()
-    const { cleanup } = await createAndMount(mountpoint)
-    onExit(cleanup)
-  },
-
-  async mount() {
-    const [keyOrName, mountpoint] = args
-    if (!keyOrName || !mountpoint) usage()
+  async watch() {
+    const [keyOrName, localFolder] = args
+    if (!keyOrName || !localFolder) usage()
     const key = await resolveKey(keyOrName)
-    const { cleanup } = await connectAndMount(key, mountpoint)
+    const { cleanup } = await watchDrive(key, localFolder)
     onExit(cleanup)
-  },
-
-  async unmount() {
-    const [mountpoint] = args
-    if (!mountpoint) usage()
-    await unmount(mountpoint)
-    console.log(`Unmounted ${mountpoint}`)
   },
 
   async pull() {
@@ -139,14 +124,12 @@ function onExit(cleanup) {
 
 function usage() {
   console.error(`Usage:
-  d2rive share <folder>                    Share a local folder (syncs + watches)
-  d2rive create <mountpoint>               Create a new empty drive and mount it
-  d2rive mount <key|name> <mountpoint>     Mount a remote drive by key
-  d2rive unmount <mountpoint>              Unmount
+  d2rive share <folder>                    Share a local folder (syncs + watches for changes)
+  d2rive watch <key|name> <localFolder>    Watch a remote drive, syncing files locally
 
   d2rive pull <key|name> <remote> <local>  Download a single file from a drive
   d2rive info <key|name>                   List files and sizes in a drive
-  d2rive sync <key|name> <localFolder>     Download all files from a drive
+  d2rive sync <key|name> <localFolder>     One-time download of all files from a drive
 
   d2rive save <name> <key>                 Save a drive key with a friendly name
   d2rive saved                             List saved drives

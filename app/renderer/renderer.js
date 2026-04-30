@@ -28,9 +28,9 @@ function renderMounts() {
   el.innerHTML = state.activeMounts.map(m => {
     const dotClass = `dot-${m.status}`
     const label = m.mountpoint.replace(/^\/Users\/[^/]+/, '~')
-    const badge = m.type === 'share' ? 'sharing' : 'mount'
+    const badge = m.type === 'share' ? 'sharing' : 'watching'
     const mp = m.mountpoint.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
-    const saveBtn = m.type === 'mount' && m.key
+    const saveBtn = m.type === 'watch' && m.key
       ? `<button class="btn-small" onclick="onSaveMount('${mp}', '${m.key}')">Save</button>`
       : ''
     return `
@@ -40,7 +40,7 @@ function renderMounts() {
         <span class="mount-type-badge">${badge}</span>
         <button class="btn-small" onclick="api.openInFinder('${mp}')">Open</button>
         ${saveBtn}
-        <button class="btn-danger" onclick="onUnmount('${mp}')">Unmount</button>
+        <button class="btn-danger" onclick="onStop('${mp}')">Stop</button>
       </div>`
   }).join('')
 }
@@ -112,11 +112,11 @@ document.getElementById('btn-connect').addEventListener('click', async () => {
   const btn = document.getElementById('btn-connect')
   const msg = document.getElementById('mount-status-msg')
   btn.disabled = true
-  btn.innerHTML = '<span class="spinner"></span>Connecting…'
+  btn.innerHTML = '<span class="spinner"></span>Watching…'
   msg.textContent = ''
 
-  const r = await api.mountDrive(key, mountpoint)
-  btn.innerHTML = 'Connect'
+  const r = await api.watchDrive(key, mountpoint)
+  btn.innerHTML = 'Watch'
 
   if (r.error) {
     msg.textContent = friendlyError(r.error)
@@ -132,17 +132,16 @@ document.getElementById('btn-connect').addEventListener('click', async () => {
 })
 
 function friendlyError(err) {
-  if (err.includes('ENOENT')) return 'Folder not found — does the mountpoint exist?'
+  if (err.includes('ENOENT')) return 'Folder not found — please select a valid folder'
   if (err.includes('EACCES') || err.includes('EPERM')) return 'Permission denied'
-  if (err.includes('ENOTCONN') || err.includes('not configured')) return 'Mount point is busy — try a different folder'
-  if (err.includes('code 1')) return 'Failed to start — check the key and mountpoint'
+  if (err.includes('code 1')) return 'Failed to start — check the key and folder'
   return err
 }
 
 // ── Active mounts ─────────────────────────────────────────────────────────────
 
-function onUnmount(mountpoint) {
-  api.unmount(mountpoint).then(() => refresh())
+function onStop(mountpoint) {
+  api.stopWatch(mountpoint).then(() => refresh())
 }
 
 async function onSaveMount(mountpoint, key) {
@@ -158,8 +157,8 @@ async function onSaveMount(mountpoint, key) {
 async function onMountSaved(key) {
   const result = await api.pickFolder()
   if (result.cancelled) return
-  const r = await api.mountDrive(key, result.path)
-  if (r.error) { alert('Mount failed: ' + friendlyError(r.error)); return }
+  const r = await api.watchDrive(key, result.path)
+  if (r.error) { alert('Watch failed: ' + friendlyError(r.error)); return }
   await refresh()
 }
 

@@ -4,8 +4,8 @@ const { contextBridge, ipcRenderer } = require('electron')
 contextBridge.exposeInMainWorld('api', {
   pickFolder:     ()                   => ipcRenderer.invoke('dialog:pick-folder'),
   shareFolder:    (folderPath)         => ipcRenderer.invoke('drive:share-folder', { folderPath }),
-  mountDrive:     (keyHex, mountpoint) => ipcRenderer.invoke('drive:mount', { keyHex, mountpoint }),
-  unmount:        (mountpoint)         => ipcRenderer.invoke('drive:unmount', { mountpoint }),
+  watchDrive:     (keyHex, localFolder) => ipcRenderer.invoke('drive:watch', { keyHex, localFolder }),
+  stopWatch:      (mountpoint)         => ipcRenderer.invoke('drive:stop', { mountpoint }),
   listMounts:     ()                   => ipcRenderer.invoke('drive:list-mounts'),
   listSaved:      ()                   => ipcRenderer.invoke('drive:list-saved'),
   saveDrive:      (name, key)          => ipcRenderer.invoke('drive:save', { name, key }),

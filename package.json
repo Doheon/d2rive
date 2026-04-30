@@ -1,20 +1,18 @@
 {
   "name": "d2rive",
   "version": "0.1.0",
-  "description": "Mount remote Hyperdrive folders locally via FUSE",
+  "description": "Share and sync remote Hyperdrive folders locally",
   "license": "MIT",
   "type": "module",
   "bin": {
     "d2rive": "bin/d2rive.js"
   },
   "scripts": {
-    "test": "node --test test/index.test.js",
-    "postinstall": "bash scripts/patch-fuse.sh"
+    "test": "node --test test/index.test.js"
   },
   "dependencies": {
     "b4a": "^1.6.7",
     "corestore": "^6.18.0",
-    "fuse-native": "^2.2.6",
     "hyperdrive": "^11.11.0",
     "hyperswarm": "^4.8.4",
     "localdrive": "^2.2.1",

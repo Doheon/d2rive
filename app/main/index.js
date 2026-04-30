@@ -20,34 +20,19 @@ function findNode() {
 }
 const NODE = findNode()
 
-function forceUnmount(mountpoint) {
-  try {
-    if (process.platform === 'darwin') {
-      execSync(`diskutil unmount force "${mountpoint}"`, { stdio: 'ignore' })
-    } else if (process.platform === 'linux') {
-      execSync(`fusermount -uz "${mountpoint}"`, { stdio: 'ignore' })
-    }
-  } catch {}
-}
-
-function makeCleanup(child, mountpoint) {
+function makeCleanup(child) {
   return () => new Promise(res => {
     child.kill('SIGTERM')
-    const timer = setTimeout(() => {
-      child.kill('SIGKILL')
-      forceUnmount(mountpoint)
-      res()
-    }, 3000)
+    const timer = setTimeout(() => { child.kill('SIGKILL'); res() }, 3000)
     child.once('exit', () => { clearTimeout(timer); res() })
   })
 }
 
-function makeCleanupByPid(pid, mountpoint) {
+function makeCleanupByPid(pid) {
   return () => new Promise(res => {
-    try { process.kill(pid, 'SIGTERM') } catch { forceUnmount(mountpoint); return res() }
+    try { process.kill(pid, 'SIGTERM') } catch { return res() }
     const timer = setTimeout(() => {
       try { process.kill(pid, 'SIGKILL') } catch {}
-      forceUnmount(mountpoint)
       res()
     }, 3000)
     const check = setInterval(() => {
@@ -69,19 +54,19 @@ function discoverMounts() {
       if (cmdIdx < 0) continue
       const cmd = parts[cmdIdx + 1]
 
-      if (cmd === 'mount') {
+      if (cmd === 'watch') {
         const key = parts[cmdIdx + 2]
-        const mountpoint = parts[cmdIdx + 3]
-        if (!key || !mountpoint || !/^[0-9a-f]{64}$/i.test(key)) continue
-        if (mounts.getAllMounts().find(m => m.mountpoint === mountpoint)) continue
-        mounts.addMount({ mountpoint, key, type: 'mount', status: 'connected',
-          cleanup: makeCleanupByPid(pid, mountpoint) })
+        const localFolder = parts[cmdIdx + 3]
+        if (!key || !localFolder || !/^[0-9a-f]{64}$/i.test(key)) continue
+        if (mounts.getAllMounts().find(m => m.mountpoint === localFolder)) continue
+        mounts.addMount({ mountpoint: localFolder, key, type: 'watch', status: 'connected',
+          cleanup: makeCleanupByPid(pid) })
       } else if (cmd === 'share') {
         const folderPath = parts[cmdIdx + 2]
         if (!folderPath) continue
         if (mounts.getAllMounts().find(m => m.mountpoint === folderPath)) continue
         mounts.addMount({ mountpoint: folderPath, key: '', type: 'share', status: 'connected',
-          cleanup: makeCleanupByPid(pid, folderPath) })
+          cleanup: makeCleanupByPid(pid) })
       }
     }
   } catch {}
@@ -227,7 +212,7 @@ function registerIPC() {
             const key = m[1]
             mounts.addMount({
               mountpoint: folderPath, key, type: 'share', status: 'connected',
-              cleanup: makeCleanup(child, folderPath)
+              cleanup: makeCleanup(child)
             })
             resolve({ key })
           }
@@ -241,21 +226,21 @@ function registerIPC() {
     })
   })
 
-  ipcMain.handle('drive:mount', async (_, { keyHex, mountpoint }) => {
+  ipcMain.handle('drive:watch', async (_, { keyHex, localFolder }) => {
     return new Promise((resolve) => {
       let done = false
-      const child = spawnD2rive(['mount', keyHex, mountpoint], {
+      const child = spawnD2rive(['watch', keyHex, localFolder], {
         onLine(line) {
           if (done) {
-            if (line.includes('Lost connection')) mounts.setStatus(mountpoint, 'disconnected')
-            else if (line.includes('Reconnected')) mounts.setStatus(mountpoint, 'connected')
+            if (line.includes('Lost connection')) mounts.setStatus(localFolder, 'disconnected')
+            else if (line.includes('Reconnected')) mounts.setStatus(localFolder, 'connected')
             return
           }
-          if (line.includes('Mounted at') || line.includes('Running...')) {
+          if (line.includes('Running...')) {
             done = true
             mounts.addMount({
-              mountpoint, key: keyHex, type: 'mount', status: 'connected',
-              cleanup: makeCleanup(child, mountpoint)
+              mountpoint: localFolder, key: keyHex, type: 'watch', status: 'connected',
+              cleanup: makeCleanup(child)
             })
             resolve({ ok: true })
           }
@@ -263,15 +248,15 @@ function registerIPC() {
         },
         onExit(code) {
           if (!done) { done = true; resolve({ error: `Process exited (code ${code})` }) }
-          else mounts.setStatus(mountpoint, 'disconnected')
+          else mounts.setStatus(localFolder, 'disconnected')
         }
       })
       setTimeout(() => {
         if (!done) {
           done = true
           mounts.addMount({
-            mountpoint, key: keyHex, type: 'mount', status: 'connecting',
-            cleanup: makeCleanup(child, mountpoint)
+            mountpoint: localFolder, key: keyHex, type: 'watch', status: 'connecting',
+            cleanup: makeCleanup(child)
           })
           resolve({ ok: true })
         }
@@ -279,7 +264,7 @@ function registerIPC() {
     })
   })
 
-  ipcMain.handle('drive:unmount', async (_, { mountpoint }) => {
+  ipcMain.handle('drive:stop', async (_, { mountpoint }) => {
     try { await mounts.removeMount(mountpoint); return { ok: true } }
     catch (err) { return { error: err.message } }
   })
