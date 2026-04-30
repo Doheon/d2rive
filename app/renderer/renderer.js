@@ -29,12 +29,14 @@ function renderMounts() {
     const dotClass = `dot-${m.status}`
     const label = m.mountpoint.replace(/^\/Users\/[^/]+/, '~')
     const badge = m.type === 'share' ? 'sharing' : 'mount'
+    const mp = m.mountpoint.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
     return `
       <div class="mount-row">
         <div class="mount-dot ${dotClass}"></div>
         <span class="mount-path" title="${m.mountpoint}">${label}</span>
         <span class="mount-type-badge">${badge}</span>
-        <button class="btn-danger" onclick="onUnmount('${m.mountpoint.replace(/'/g, "\\'")}')">Unmount</button>
+        <button class="btn-small" onclick="api.openInFinder('${mp}')">Open</button>
+        <button class="btn-danger" onclick="onUnmount('${mp}')">Unmount</button>
       </div>`
   }).join('')
 }
@@ -47,24 +49,30 @@ function renderSaved() {
   }
   el.innerHTML = state.savedDrives.map(d => `
     <div class="saved-row">
-      <span class="saved-name">${d.name}</span>
+      <span class="saved-name" title="${d.key}">${d.name}</span>
       <button class="btn-small" onclick="onMountSaved('${d.key}')">Mount</button>
       <button class="btn-danger" onclick="onForget('${d.name}')">Remove</button>
     </div>`).join('')
 }
 
-// ── Action handlers ───────────────────────────────────────────────────────────
+// ── Share ─────────────────────────────────────────────────────────────────────
 
-async function onShareFolder() {
+document.getElementById('btn-share').addEventListener('click', async () => {
   const result = await api.pickFolder()
   if (result.cancelled) return
+  const btn = document.getElementById('btn-share')
+  btn.disabled = true
+  btn.innerHTML = '<span class="spinner"></span>Sharing…'
   const r = await api.shareFolder(result.path)
-  if (r.error) { alert('Error: ' + r.error); return }
+  btn.disabled = false
+  btn.textContent = 'Select Folder to Share…'
+  if (r.error) { alert('Share failed: ' + r.error); return }
   state.pendingShareKey = r.key
   document.getElementById('share-key-text').textContent = r.key
+  document.getElementById('save-name-input').value = ''
   document.getElementById('share-card').classList.remove('hidden')
   await refresh()
-}
+})
 
 document.getElementById('btn-copy-key').addEventListener('click', () => {
   navigator.clipboard.writeText(state.pendingShareKey || '').then(() => {
@@ -74,32 +82,25 @@ document.getElementById('btn-copy-key').addEventListener('click', () => {
   })
 })
 
-function onUnmount(mountpoint) {
-  api.unmount(mountpoint).then(() => refresh())
-}
-
-// ── Mount panel ───────────────────────────────────────────────────────────────
-
-document.getElementById('btn-mount').addEventListener('click', () => {
-  document.getElementById('mount-panel').classList.remove('hidden')
-  document.getElementById('mount-status-msg').textContent = ''
-  document.getElementById('key-input').focus()
+document.getElementById('btn-save-shared-key').addEventListener('click', async () => {
+  const name = document.getElementById('save-name-input').value.trim()
+  if (!name) { document.getElementById('save-name-input').focus(); return }
+  const r = await api.saveDrive(name, state.pendingShareKey)
+  if (r.error) { alert('Save failed: ' + r.error); return }
+  document.getElementById('save-name-input').value = ''
+  const btn = document.getElementById('btn-save-shared-key')
+  btn.textContent = 'Saved!'
+  setTimeout(() => { btn.textContent = 'Save' }, 1500)
+  await refresh()
 })
 
-document.getElementById('btn-cancel-mount').addEventListener('click', () => {
-  document.getElementById('mount-panel').classList.add('hidden')
-  document.getElementById('key-input').value = ''
-  state.mountSelectedPath = null
-  document.getElementById('mount-path-label').textContent = 'No folder selected'
-  document.getElementById('btn-connect').disabled = true
-})
+// ── Mount ─────────────────────────────────────────────────────────────────────
 
 document.getElementById('btn-pick-folder').addEventListener('click', async () => {
   const result = await api.pickFolder()
   if (result.cancelled) return
   state.mountSelectedPath = result.path
-  const label = result.path.replace(/^\/Users\/[^/]+/, '~')
-  document.getElementById('mount-path-label').textContent = label
+  document.getElementById('mount-path-label').textContent = result.path.replace(/^\/Users\/[^/]+/, '~')
   updateConnectBtn()
 })
 
@@ -107,8 +108,7 @@ document.getElementById('key-input').addEventListener('input', updateConnectBtn)
 
 function updateConnectBtn() {
   const key = document.getElementById('key-input').value.trim()
-  const valid = /^[0-9a-f]{64}$/i.test(key) && !!state.mountSelectedPath
-  document.getElementById('btn-connect').disabled = !valid
+  document.getElementById('btn-connect').disabled = !/^[0-9a-f]{64}$/i.test(key) || !state.mountSelectedPath
 }
 
 document.getElementById('btn-connect').addEventListener('click', async () => {
@@ -116,18 +116,41 @@ document.getElementById('btn-connect').addEventListener('click', async () => {
   const mountpoint = state.mountSelectedPath
   if (!key || !mountpoint) return
 
-  document.getElementById('btn-connect').disabled = true
-  document.getElementById('mount-status-msg').textContent = 'Connecting…'
+  const btn = document.getElementById('btn-connect')
+  const msg = document.getElementById('mount-status-msg')
+  btn.disabled = true
+  btn.innerHTML = '<span class="spinner"></span>Connecting…'
+  msg.textContent = ''
 
   const r = await api.mountDrive(key, mountpoint)
+  btn.innerHTML = 'Connect'
+
   if (r.error) {
-    document.getElementById('mount-status-msg').textContent = 'Error: ' + r.error
-    document.getElementById('btn-connect').disabled = false
+    msg.textContent = friendlyError(r.error)
+    btn.disabled = false
     return
   }
-  document.getElementById('btn-cancel-mount').click()
+
+  document.getElementById('key-input').value = ''
+  document.getElementById('mount-path-label').textContent = 'No folder selected'
+  state.mountSelectedPath = null
+  msg.textContent = ''
   await refresh()
 })
+
+function friendlyError(err) {
+  if (err.includes('ENOENT')) return 'Folder not found — does the mountpoint exist?'
+  if (err.includes('EACCES') || err.includes('EPERM')) return 'Permission denied'
+  if (err.includes('ENOTCONN') || err.includes('not configured')) return 'Mount point is busy — try a different folder'
+  if (err.includes('code 1')) return 'Failed to start — check the key and mountpoint'
+  return err
+}
+
+// ── Active mounts ─────────────────────────────────────────────────────────────
+
+function onUnmount(mountpoint) {
+  api.unmount(mountpoint).then(() => refresh())
+}
 
 // ── Saved drives ──────────────────────────────────────────────────────────────
 
@@ -135,7 +158,7 @@ async function onMountSaved(key) {
   const result = await api.pickFolder()
   if (result.cancelled) return
   const r = await api.mountDrive(key, result.path)
-  if (r.error) { alert('Error: ' + r.error); return }
+  if (r.error) { alert('Mount failed: ' + friendlyError(r.error)); return }
   await refresh()
 }
 
@@ -145,7 +168,7 @@ async function onForget(name) {
   await refresh()
 }
 
-// ── Push event handlers ───────────────────────────────────────────────────────
+// ── Push events ───────────────────────────────────────────────────────────────
 
 api.onMountStatus(({ mountpoint, status }) => {
   if (status === 'removed') { refresh(); return }
@@ -154,14 +177,19 @@ api.onMountStatus(({ mountpoint, status }) => {
   else refresh()
 })
 
-api.onLog(({ text }) => {
-  // Optionally could show a log panel; for now just consume
-})
+api.onLog(() => {})
+
+// ── Auto-start ────────────────────────────────────────────────────────────────
+
+const autoStartCb = document.getElementById('auto-start-cb')
+
+api.getAutoStart().then(enabled => { autoStartCb.checked = !!enabled })
+
+autoStartCb.addEventListener('change', () => api.setAutoStart(autoStartCb.checked))
 
 // ── Quit ──────────────────────────────────────────────────────────────────────
 
 document.getElementById('btn-quit').addEventListener('click', () => api.quit())
-document.getElementById('btn-share').addEventListener('click', onShareFolder)
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 

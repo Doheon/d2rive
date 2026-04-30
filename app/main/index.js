@@ -1,13 +1,11 @@
 'use strict'
-const { app, ipcMain, dialog, shell } = require('electron')
-const { menubar } = require('menubar')
-const { spawn } = require('child_process')
+const { app, ipcMain, dialog, shell, Tray, BrowserWindow, nativeImage, screen } = require('electron')
+const { spawn, execSync } = require('child_process')
 const path = require('path')
 const mounts = require('./mounts')
 
 const BIN = path.resolve(__dirname, '../../bin/d2rive.js')
 
-const { execSync } = require('child_process')
 function findNode() {
   const candidates = [
     process.env.NODE_BINARY,
@@ -22,16 +20,35 @@ function findNode() {
 }
 const NODE = findNode()
 
-// drives.js has no fuse-native dependency — safe to import directly
+function forceUnmount(mountpoint) {
+  try {
+    if (process.platform === 'darwin') {
+      execSync(`diskutil unmount force "${mountpoint}"`, { stdio: 'ignore' })
+    } else if (process.platform === 'linux') {
+      execSync(`fusermount -uz "${mountpoint}"`, { stdio: 'ignore' })
+    }
+  } catch {}
+}
+
+function makeCleanup(child, mountpoint) {
+  return () => new Promise(res => {
+    child.kill('SIGTERM')
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL')
+      forceUnmount(mountpoint)
+      res()
+    }, 3000)
+    child.once('exit', () => { clearTimeout(timer); res() })
+  })
+}
+
 let drivesLib
 async function loadLibs() {
   drivesLib = await import(path.resolve(__dirname, '../../src/drives.js'))
 }
 
 function spawnD2rive(args, { onLine, onExit } = {}) {
-  const child = spawn(NODE, [BIN, ...args], {
-    env: { ...process.env }
-  })
+  const child = spawn(NODE, [BIN, ...args], { env: { ...process.env } })
 
   let buf = ''
   child.stdout.on('data', chunk => {
@@ -58,34 +75,76 @@ function spawnD2rive(args, { onLine, onExit } = {}) {
   return child
 }
 
-// Register IPC handlers before menubar is created to avoid timing issues
+let tray, win
+let dialogOpen = false
+
+function createTray() {
+  const icon = nativeImage.createFromPath(path.join(__dirname, '../assets/trayTemplate.png'))
+  tray = new Tray(icon)
+  tray.setToolTip('d2rive')
+  tray.on('click', (_, bounds) => toggleWindow(bounds))
+}
+
+function createWindow() {
+  win = new BrowserWindow({
+    width: 400,
+    height: 560,
+    show: false,
+    frame: false,
+    resizable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    webPreferences: {
+      preload: path.join(__dirname, '../renderer/preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  })
+  win.loadFile(path.join(__dirname, '../renderer/index.html'))
+  win.on('blur', () => { if (!dialogOpen) win.hide() })
+  mounts.setWindow(win)
+}
+
+function getWindowPosition(trayBounds) {
+  const [winWidth, winHeight] = win.getSize()
+
+  if (process.platform === 'darwin') {
+    const x = Math.round(trayBounds.x + trayBounds.width / 2 - winWidth / 2)
+    const y = Math.round(trayBounds.y + trayBounds.height + 4)
+    return { x, y }
+  }
+
+  if (process.platform === 'win32') {
+    const d = screen.getPrimaryDisplay()
+    return { x: d.bounds.width - winWidth - 8, y: d.bounds.height - winHeight - 50 }
+  }
+
+  // Linux
+  if (trayBounds && trayBounds.width > 0) {
+    return {
+      x: Math.round(trayBounds.x + trayBounds.width / 2 - winWidth / 2),
+      y: Math.round(trayBounds.y + trayBounds.height + 4)
+    }
+  }
+  const d = screen.getPrimaryDisplay()
+  return { x: d.bounds.width - winWidth - 8, y: 8 }
+}
+
+function toggleWindow(trayBounds) {
+  if (win.isVisible()) { win.hide(); return }
+  const { x, y } = getWindowPosition(trayBounds)
+  win.setPosition(x, y)
+  win.show()
+  win.focus()
+}
+
 registerIPC()
 
 app.whenReady().then(async () => {
   await loadLibs()
-
-  const { nativeImage } = require('electron')
-  const icon = nativeImage.createFromPath(path.join(__dirname, '../assets/trayTemplate.png'))
-
-  const mb = menubar({
-    index: `file://${path.join(__dirname, '../renderer/index.html')}`,
-    icon,
-    browserWindow: {
-      width: 400,
-      height: 520,
-      webPreferences: {
-        preload: path.join(__dirname, '../renderer/preload.js'),
-        contextIsolation: true,
-        nodeIntegration: false
-      },
-      resizable: false,
-      skipTaskbar: true
-    },
-    preloadWindow: true,
-    showDockIcon: false
-  })
-
-  mb.on('ready', () => mounts.setWindow(mb.window))
+  if (app.dock) app.dock.hide()
+  createTray()
+  createWindow()
 
   app.on('before-quit', async (e) => {
     e.preventDefault()
@@ -98,8 +157,10 @@ app.on('window-all-closed', (e) => e.preventDefault())
 
 function registerIPC() {
   ipcMain.handle('dialog:pick-folder', async () => {
-    // mb.window may not exist yet — use null to open as sheet-less dialog
-    const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
+    dialogOpen = true
+    const result = await dialog.showOpenDialog(win || null, { properties: ['openDirectory'] })
+    dialogOpen = false
+    if (win) win.focus()
     if (result.canceled || !result.filePaths.length) return { cancelled: true }
     return { path: result.filePaths[0] }
   })
@@ -110,7 +171,6 @@ function registerIPC() {
       const child = spawnD2rive(['share', folderPath], {
         onLine(line) {
           if (done) {
-            // Post-resolve: watch for status changes
             if (line.includes('Lost connection')) mounts.setStatus(folderPath, 'disconnected')
             else if (line.includes('Reconnected')) mounts.setStatus(folderPath, 'connected')
             return
@@ -121,7 +181,7 @@ function registerIPC() {
             const key = m[1]
             mounts.addMount({
               mountpoint: folderPath, key, type: 'share', status: 'connected',
-              cleanup: () => new Promise(res => { child.kill('SIGTERM'); child.once('exit', res) })
+              cleanup: makeCleanup(child, folderPath || mountpoint)
             })
             resolve({ key })
           }
@@ -149,26 +209,23 @@ function registerIPC() {
             done = true
             mounts.addMount({
               mountpoint, key: keyHex, type: 'mount', status: 'connected',
-              cleanup: () => new Promise(res => { child.kill('SIGTERM'); child.once('exit', res) })
+              cleanup: makeCleanup(child, folderPath || mountpoint)
             })
             resolve({ ok: true })
           }
-          if (line.toLowerCase().includes('error')) {
-            done = true; resolve({ error: line })
-          }
+          if (line.toLowerCase().includes('error')) { done = true; resolve({ error: line }) }
         },
         onExit(code) {
           if (!done) { done = true; resolve({ error: `Process exited (code ${code})` }) }
           else mounts.setStatus(mountpoint, 'disconnected')
         }
       })
-      // After 20s still no "Mounted at" — treat as connecting
       setTimeout(() => {
         if (!done) {
           done = true
           mounts.addMount({
             mountpoint, key: keyHex, type: 'mount', status: 'connecting',
-            cleanup: () => new Promise(res => { child.kill('SIGTERM'); child.once('exit', res) })
+            cleanup: makeCleanup(child, folderPath || mountpoint)
           })
           resolve({ ok: true })
         }
@@ -200,6 +257,13 @@ function registerIPC() {
   })
 
   ipcMain.handle('app:open-in-finder', async (_, { path: p }) => shell.showItemInFolder(p))
+
+  ipcMain.handle('app:get-auto-start', () => app.getLoginItemSettings().openAtLogin)
+
+  ipcMain.handle('app:set-auto-start', (_, enabled) => {
+    app.setLoginItemSettings({ openAtLogin: enabled })
+    return { ok: true }
+  })
 
   ipcMain.handle('app:quit', async () => { await mounts.cleanupAll(); app.exit(0) })
 }

@@ -132,9 +132,9 @@ handler().catch(err => { console.error(err.message); process.exit(1) })
 
 function onExit(cleanup) {
   console.log('Running... Press Ctrl+C to stop.')
-  process.once('SIGINT', () => {
-    cleanup().then(() => process.exit(0)).catch(() => process.exit(1))
-  })
+  const exit = () => cleanup().then(() => process.exit(0)).catch(() => process.exit(1))
+  process.once('SIGINT', exit)
+  process.once('SIGTERM', exit)
 }
 
 function usage() {

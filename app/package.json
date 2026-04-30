@@ -11,9 +11,7 @@
     "start": "electron .",
     "rebuild": "npx @electron/rebuild -f -w fuse-native --module-dir .."
   },
-  "dependencies": {
-    "menubar": "^9.4.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "electron": "^34.0.0",
     "@electron/rebuild": "^3.7.0"

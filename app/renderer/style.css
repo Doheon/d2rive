@@ -12,7 +12,6 @@ body {
 #app {
   display: flex;
   flex-direction: column;
-  padding: 0;
   min-height: 100vh;
 }
 
@@ -30,6 +29,9 @@ header h1 {
 section {
   padding: 10px 16px;
   border-bottom: 1px solid #e5e5e5;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .section-title {
@@ -38,15 +40,14 @@ section {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: #888;
-  margin-bottom: 6px;
 }
 
 /* Active mounts */
 .mount-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 0;
+  gap: 6px;
+  padding: 2px 0;
 }
 
 .mount-dot {
@@ -66,7 +67,6 @@ section {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: #333;
-  cursor: default;
 }
 
 .mount-type-badge {
@@ -75,15 +75,10 @@ section {
   border-radius: 3px;
   background: #f0f0f0;
   color: #666;
+  flex-shrink: 0;
 }
 
 /* Buttons */
-#actions-section {
-  display: flex;
-  gap: 8px;
-  flex-direction: column;
-}
-
 .btn-primary, .btn-secondary, .btn-small, .btn-danger {
   border: none;
   border-radius: 6px;
@@ -91,6 +86,10 @@ section {
   font-size: 13px;
   font-family: inherit;
   transition: opacity 0.1s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
 }
 .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
@@ -124,23 +123,37 @@ section {
   color: #ff3b30;
   padding: 3px 8px;
   font-size: 11px;
+  flex-shrink: 0;
 }
 .btn-danger:hover { background: #fff0ef; }
 
-/* Card panels */
-.card {
-  margin: 0 16px 0;
-  padding: 10px 12px;
-  background: #f9f9f9;
-  border: 1px solid #e5e5e5;
-  border-radius: 8px;
-  margin-bottom: 0;
+/* Spinner */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border: 2px solid rgba(255,255,255,0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  flex-shrink: 0;
+}
+
+/* Share card */
+#share-card {
+  background: #f0f7ff;
+  border: 1px solid #c7e0ff;
+  border-radius: 7px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .card-label {
   font-size: 11px;
-  color: #888;
-  margin-bottom: 5px;
+  color: #555;
 }
 
 .key-row {
@@ -159,7 +172,25 @@ section {
   white-space: nowrap;
 }
 
-/* Mount panel inputs */
+.save-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.save-name-input {
+  flex: 1;
+  padding: 4px 7px;
+  border: 1px solid #c7e0ff;
+  border-radius: 5px;
+  font-size: 12px;
+  font-family: inherit;
+  background: #fff;
+  outline: none;
+}
+.save-name-input:focus { border-color: #007aff; }
+
+/* Mount section */
 #key-input {
   width: 100%;
   padding: 6px 8px;
@@ -167,7 +198,6 @@ section {
   border-radius: 6px;
   font-family: 'SF Mono', Menlo, monospace;
   font-size: 11px;
-  margin-bottom: 6px;
   outline: none;
 }
 #key-input:focus { border-color: #007aff; }
@@ -176,7 +206,6 @@ section {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
 }
 
 .path-hint {
@@ -188,18 +217,9 @@ section {
   white-space: nowrap;
 }
 
-.btn-row {
-  display: flex;
-  gap: 8px;
-}
-
-.btn-row .btn-primary { flex: 1; }
-.btn-row .btn-secondary { flex: 1; }
-
 #mount-status-msg {
   font-size: 11px;
   color: #ff3b30;
-  margin-top: 4px;
   min-height: 14px;
 }
 
@@ -208,7 +228,7 @@ section {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 3px 0;
+  padding: 2px 0;
 }
 
 .saved-name {
@@ -221,23 +241,24 @@ section {
 .empty-hint {
   color: #aaa;
   font-size: 12px;
-  padding: 2px 0;
 }
 
+/* Footer */
 footer {
   padding: 10px 16px;
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
   margin-top: auto;
 }
 
-.hidden { display: none !important; }
-
-/* Sections that contain cards */
-#share-card, #mount-panel {
-  margin: 0;
-  border-radius: 0;
-  border-left: none;
-  border-right: none;
-  border-top: none;
+.auto-start-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #555;
+  cursor: pointer;
 }
+
+.hidden { display: none !important; }

@@ -17,34 +17,32 @@
       <div id="mounts-list"><div class="empty-hint">No active mounts</div></div>
     </section>
 
-    <section id="actions-section">
-      <button id="btn-share" class="btn-primary">Share Folder</button>
-      <button id="btn-mount" class="btn-primary">Mount Drive</button>
+    <section id="share-section">
+      <div class="section-title">Share Folder</div>
+      <button id="btn-share" class="btn-primary">Select Folder to Share&hellip;</button>
+      <div id="share-card" class="hidden">
+        <div class="card-label">Drive Key &mdash; share this with others:</div>
+        <div class="key-row">
+          <code id="share-key-text"></code>
+          <button id="btn-copy-key" class="btn-small">Copy</button>
+        </div>
+        <div class="save-row">
+          <input id="save-name-input" class="save-name-input" placeholder="Save as name&hellip;">
+          <button id="btn-save-shared-key" class="btn-small">Save</button>
+        </div>
+      </div>
     </section>
 
-    <!-- Share result card (hidden initially) -->
-    <div id="share-card" class="card hidden">
-      <div class="card-label">Drive Key &mdash; share this:</div>
-      <div class="key-row">
-        <code id="share-key-text"></code>
-        <button id="btn-copy-key" class="btn-small">Copy</button>
-      </div>
-    </div>
-
-    <!-- Mount input panel (hidden initially) -->
-    <div id="mount-panel" class="card hidden">
-      <div class="card-label">Drive Key:</div>
+    <section id="mount-section">
+      <div class="section-title">Mount Drive</div>
       <input id="key-input" type="text" placeholder="64-character hex key" spellcheck="false">
       <div id="mount-path-row">
         <span id="mount-path-label" class="path-hint">No folder selected</span>
-        <button id="btn-pick-folder" class="btn-small">Select Folder&hellip;</button>
+        <button id="btn-pick-folder" class="btn-small">Select&hellip;</button>
       </div>
-      <div class="btn-row">
-        <button id="btn-connect" class="btn-primary" disabled>Connect</button>
-        <button id="btn-cancel-mount" class="btn-secondary">Cancel</button>
-      </div>
+      <button id="btn-connect" class="btn-primary" disabled>Connect</button>
       <div id="mount-status-msg"></div>
-    </div>
+    </section>
 
     <section id="saved-section">
       <div class="section-title">Saved Drives</div>
@@ -52,6 +50,10 @@
     </section>
 
     <footer>
+      <label class="auto-start-label">
+        <input type="checkbox" id="auto-start-cb">
+        Start at login
+      </label>
       <button id="btn-quit" class="btn-secondary">Quit</button>
     </footer>
   </div>
