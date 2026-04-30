@@ -62,10 +62,12 @@ async function connectToPeers(drive, swarm) {
 
 // ── Public commands ───────────────────────────────────────────────────────────
 
-export async function shareFolder(folderPath) {
+export async function shareFolder(folderPath, { writable = false } = {}) {
   const { drive, store, swarm } = await setupDrive()
   const local = new Localdrive(folderPath)
   const ignore = await loadIgnore(folderPath)
+
+  await drive.put('/.d2rive-config', Buffer.from(JSON.stringify({ writable })))
 
   const count = await syncToDrive(local, drive, ignore)
   console.log(`Synced: +${count.add} changed:${count.change} -${count.remove}`)
@@ -75,7 +77,7 @@ export async function shareFolder(folderPath) {
   const key = b4a.toString(drive.key, 'hex')
   console.log(`Drive key: ${key}`)
   console.log(`Others can watch with: d2rive watch ${key} <localFolder>`)
-  console.log(`Watching ${folderPath} for changes...`)
+  console.log(`Watching ${folderPath} for changes... (${writable ? 'writable' : 'read-only'})`)
 
   watchLocal(folderPath, local, drive, ignore)
 
@@ -89,14 +91,18 @@ export async function shareFolder(folderPath) {
   }
 }
 
-export async function watchDrive(keyHex, localFolder, { writable = false } = {}) {
+export async function watchDrive(keyHex, localFolder) {
   const key = b4a.from(keyHex, 'hex')
   const { drive, store, swarm } = await setupDrive(key)
   await connectToPeers(drive, swarm)
 
+  const configBuf = await drive.get('/.d2rive-config').catch(() => null)
+  const config = configBuf ? JSON.parse(configBuf.toString()) : {}
+  const writable = config.writable ?? false
+
   await mkdir(localFolder, { recursive: true })
 
-  console.log('Initial sync...')
+  console.log(`Initial sync... (${writable ? 'writable' : 'read-only'})`)
   await downloadAll(drive, localFolder, { writable })
 
   if (writable) {
@@ -261,7 +267,7 @@ async function syncToDrive(local, drive, ignore) {
 
   const localKeys = new Set(entries.map(e => e.key))
   for await (const entry of drive.list('/')) {
-    if (!localKeys.has(entry.key)) {
+    if (!localKeys.has(entry.key) && entry.key !== '/.d2rive-config') {
       await drive.del(entry.key)
       count.remove++
     }
@@ -280,6 +286,7 @@ async function downloadAll(drive, localPath, { writable = false } = {}) {
   const total = files.length
   let done = 0, bytes = 0
   for (const filePath of files) {
+    if (filePath === '/.d2rive-config') { done++; continue }
     const data = await drive.get(filePath)
     if (data) {
       const dest = join(localPath, filePath)

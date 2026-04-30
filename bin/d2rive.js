@@ -15,19 +15,19 @@ const [,, cmd, ...args] = process.argv
 
 const commands = {
   async share() {
-    const [folderPath] = args
+    const writable = args.includes('--write')
+    const cleanArgs = args.filter(a => a !== '--write')
+    const [folderPath] = cleanArgs
     if (!folderPath) usage()
-    const { cleanup } = await shareFolder(folderPath)
+    const { cleanup } = await shareFolder(folderPath, { writable })
     onExit(cleanup)
   },
 
   async watch() {
-    const writable = args.includes('--write')
-    const cleanArgs = args.filter(a => a !== '--write')
-    const [keyOrName, localFolder] = cleanArgs
+    const [keyOrName, localFolder] = args
     if (!keyOrName || !localFolder) usage()
     const key = await resolveKey(keyOrName)
-    const { cleanup } = await watchDrive(key, localFolder, { writable })
+    const { cleanup } = await watchDrive(key, localFolder)
     onExit(cleanup)
   },
 

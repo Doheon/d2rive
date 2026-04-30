@@ -67,7 +67,8 @@ document.getElementById('btn-share').addEventListener('click', async () => {
   const btn = document.getElementById('btn-share')
   btn.disabled = true
   btn.innerHTML = '<span class="spinner"></span>Sharing…'
-  const r = await api.shareFolder(result.path)
+  const writable = document.getElementById('share-writable-cb').checked
+  const r = await api.shareFolder(result.path, writable)
   btn.disabled = false
   btn.textContent = 'Select Folder to Share…'
   if (r.error) { alert('Share failed: ' + r.error); return }
@@ -118,7 +119,7 @@ document.getElementById('btn-connect').addEventListener('click', async () => {
   btn.innerHTML = '<span class="spinner"></span>Watching…'
   msg.textContent = ''
 
-  const r = await api.watchDrive(key, mountpoint, false)
+  const r = await api.watchDrive(key, mountpoint)
   btn.innerHTML = 'Watch'
 
   if (r.error) {

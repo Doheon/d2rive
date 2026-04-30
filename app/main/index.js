@@ -196,10 +196,11 @@ function registerIPC() {
     return { path: result.filePaths[0] }
   })
 
-  ipcMain.handle('drive:share-folder', async (_, { folderPath }) => {
+  ipcMain.handle('drive:share-folder', async (_, { folderPath, writable }) => {
     return new Promise((resolve) => {
       let done = false
-      const child = spawnD2rive(['share', folderPath], {
+      const shareArgs = writable ? ['share', '--write', folderPath] : ['share', folderPath]
+      const child = spawnD2rive(shareArgs, {
         onLine(line) {
           if (done) {
             if (line.includes('Lost connection')) mounts.setStatus(folderPath, 'disconnected')
@@ -226,11 +227,10 @@ function registerIPC() {
     })
   })
 
-  ipcMain.handle('drive:watch', async (_, { keyHex, localFolder, writable }) => {
+  ipcMain.handle('drive:watch', async (_, { keyHex, localFolder }) => {
     return new Promise((resolve) => {
       let done = false
-      const args = writable ? ['watch', '--write', keyHex, localFolder] : ['watch', keyHex, localFolder]
-      const child = spawnD2rive(args, {
+      const child = spawnD2rive(['watch', keyHex, localFolder], {
         onLine(line) {
           if (done) {
             if (line.includes('Lost connection')) mounts.setStatus(localFolder, 'disconnected')
