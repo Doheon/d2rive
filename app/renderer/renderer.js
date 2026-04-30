@@ -118,7 +118,8 @@ document.getElementById('btn-connect').addEventListener('click', async () => {
   btn.innerHTML = '<span class="spinner"></span>Watching…'
   msg.textContent = ''
 
-  const r = await api.watchDrive(key, mountpoint)
+  const writable = document.getElementById('watch-writable-cb').checked
+  const r = await api.watchDrive(key, mountpoint, writable)
   btn.innerHTML = 'Watch'
 
   if (r.error) {

@@ -211,6 +211,15 @@ section {
 }
 #save-name-input:focus { border-color: #007aff; }
 
+.watch-mode-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #555;
+  cursor: pointer;
+}
+
 .btn-row {
   display: flex;
   gap: 6px;

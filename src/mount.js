@@ -89,7 +89,7 @@ export async function shareFolder(folderPath) {
   }
 }
 
-export async function watchDrive(keyHex, localFolder) {
+export async function watchDrive(keyHex, localFolder, { writable = false } = {}) {
   const key = b4a.from(keyHex, 'hex')
   const { drive, store, swarm } = await setupDrive(key)
   await connectToPeers(drive, swarm)
@@ -97,7 +97,14 @@ export async function watchDrive(keyHex, localFolder) {
   await mkdir(localFolder, { recursive: true })
 
   console.log('Initial sync...')
-  await downloadAll(drive, localFolder)
+  await downloadAll(drive, localFolder, { writable })
+
+  if (writable) {
+    const local = new Localdrive(localFolder)
+    const ignore = await loadIgnore(localFolder)
+    watchLocal(localFolder, local, drive, ignore)
+    console.log('Writable mode: local changes will be synced to remote.')
+  }
 
   let version = drive.version
   console.log(`Watching for remote changes...`)
@@ -112,7 +119,7 @@ export async function watchDrive(keyHex, localFolder) {
           if (!filePath || filePath.endsWith('/.keep')) continue
           if (!diff.right) {
             const dest = join(localFolder, filePath)
-            await chmod(dest, 0o644).catch(() => {})
+            if (!writable) await chmod(dest, 0o644).catch(() => {})
             await rm(dest, { force: true }).catch(() => {})
             counts.remove++
           } else {
@@ -120,9 +127,9 @@ export async function watchDrive(keyHex, localFolder) {
             if (data) {
               const dest = join(localFolder, filePath)
               await mkdir(dirname(dest), { recursive: true })
-              await chmod(dest, 0o644).catch(() => {})
+              if (!writable) await chmod(dest, 0o644).catch(() => {})
               await writeFile(dest, data)
-              await chmod(dest, 0o444)
+              if (!writable) await chmod(dest, 0o444)
               diff.left ? counts.change++ : counts.add++
             }
           }
@@ -263,7 +270,7 @@ async function syncToDrive(local, drive, ignore) {
   return count
 }
 
-async function downloadAll(drive, localPath) {
+async function downloadAll(drive, localPath, { writable = false } = {}) {
   const files = []
   for await (const entry of drive.list('/')) {
     if (entry.key.endsWith('/.keep')) continue
@@ -277,9 +284,9 @@ async function downloadAll(drive, localPath) {
     if (data) {
       const dest = join(localPath, filePath)
       await mkdir(dirname(dest), { recursive: true })
-      await chmod(dest, 0o644).catch(() => {})
+      if (!writable) await chmod(dest, 0o644).catch(() => {})
       await writeFile(dest, data)
-      await chmod(dest, 0o444)
+      if (!writable) await chmod(dest, 0o444)
       bytes += data.byteLength
     }
     done++

@@ -22,10 +22,12 @@ const commands = {
   },
 
   async watch() {
-    const [keyOrName, localFolder] = args
+    const writable = args.includes('--write')
+    const cleanArgs = args.filter(a => a !== '--write')
+    const [keyOrName, localFolder] = cleanArgs
     if (!keyOrName || !localFolder) usage()
     const key = await resolveKey(keyOrName)
-    const { cleanup } = await watchDrive(key, localFolder)
+    const { cleanup } = await watchDrive(key, localFolder, { writable })
     onExit(cleanup)
   },
 

@@ -226,10 +226,11 @@ function registerIPC() {
     })
   })
 
-  ipcMain.handle('drive:watch', async (_, { keyHex, localFolder }) => {
+  ipcMain.handle('drive:watch', async (_, { keyHex, localFolder, writable }) => {
     return new Promise((resolve) => {
       let done = false
-      const child = spawnD2rive(['watch', keyHex, localFolder], {
+      const args = writable ? ['watch', '--write', keyHex, localFolder] : ['watch', keyHex, localFolder]
+      const child = spawnD2rive(args, {
         onLine(line) {
           if (done) {
             if (line.includes('Lost connection')) mounts.setStatus(localFolder, 'disconnected')
