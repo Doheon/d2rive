@@ -32,11 +32,15 @@
     <section id="mount-section">
       <div class="section-title">Watch Drive</div>
       <input id="key-input" type="text" placeholder="64-character hex key" spellcheck="false">
+      <input id="save-name-input" type="text" placeholder="Save as name (optional)" spellcheck="false">
       <div id="mount-path-row">
         <span id="mount-path-label" class="path-hint">No folder selected</span>
         <button id="btn-pick-folder" class="btn-small">Select&hellip;</button>
       </div>
-      <button id="btn-connect" class="btn-primary" disabled>Watch</button>
+      <div class="btn-row">
+        <button id="btn-connect" class="btn-primary" disabled>Watch</button>
+        <button id="btn-save-key" class="btn-secondary" disabled>Save</button>
+      </div>
       <div id="mount-status-msg"></div>
     </section>
 
@@ -52,6 +56,16 @@
       </label>
       <button id="btn-quit" class="btn-secondary">Quit</button>
     </footer>
+  </div>
+  <div id="name-dialog" class="name-dialog-overlay hidden">
+    <div class="name-dialog-box">
+      <div class="name-dialog-label">Save drive as:</div>
+      <input id="name-dialog-input" type="text" class="name-dialog-input" spellcheck="false">
+      <div class="name-dialog-btns">
+        <button id="name-dialog-cancel" class="btn-secondary">Cancel</button>
+        <button id="name-dialog-ok" class="btn-primary">Save</button>
+      </div>
+    </div>
   </div>
   <script src="renderer.js"></script>
 </body>

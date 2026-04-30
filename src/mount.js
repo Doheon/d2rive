@@ -5,7 +5,7 @@ import Localdrive from 'localdrive'
 import picomatch from 'picomatch'
 import { homedir } from 'os'
 import { join, dirname } from 'path'
-import { mkdir, readdir, readFile, writeFile, stat, rm } from 'fs/promises'
+import { mkdir, readdir, readFile, writeFile, stat, rm, chmod } from 'fs/promises'
 import { watch as fsWatch } from 'fs'
 import b4a from 'b4a'
 
@@ -99,14 +99,41 @@ export async function watchDrive(keyHex, localFolder) {
   console.log('Initial sync...')
   await downloadAll(drive, localFolder)
 
+  let version = drive.version
   console.log(`Watching for remote changes...`)
 
   const watcher = drive.watch('/')
   ;(async () => {
     for await (const _ of watcher) {
-      console.log('\nRemote changed, syncing...')
-      try { await downloadAll(drive, localFolder) }
-      catch (err) { console.error(err.message) }
+      try {
+        const counts = { add: 0, change: 0, remove: 0 }
+        for await (const diff of drive.diff(version, '/')) {
+          const filePath = diff.left?.key || diff.right?.key
+          if (!filePath || filePath.endsWith('/.keep')) continue
+          if (!diff.right) {
+            const dest = join(localFolder, filePath)
+            await chmod(dest, 0o644).catch(() => {})
+            await rm(dest, { force: true }).catch(() => {})
+            counts.remove++
+          } else {
+            const data = await drive.get(filePath)
+            if (data) {
+              const dest = join(localFolder, filePath)
+              await mkdir(dirname(dest), { recursive: true })
+              await chmod(dest, 0o644).catch(() => {})
+              await writeFile(dest, data)
+              await chmod(dest, 0o444)
+              diff.left ? counts.change++ : counts.add++
+            }
+          }
+        }
+        version = drive.version
+        const parts = []
+        if (counts.add) parts.push(`+${counts.add}`)
+        if (counts.change) parts.push(`~${counts.change}`)
+        if (counts.remove) parts.push(`-${counts.remove}`)
+        if (parts.length) console.log(`\nSynced: ${parts.join(' ')}`)
+      } catch (err) { console.error(err.message) }
     }
   })()
 
@@ -250,7 +277,9 @@ async function downloadAll(drive, localPath) {
     if (data) {
       const dest = join(localPath, filePath)
       await mkdir(dirname(dest), { recursive: true })
+      await chmod(dest, 0o644).catch(() => {})
       await writeFile(dest, data)
+      await chmod(dest, 0o444)
       bytes += data.byteLength
     }
     done++

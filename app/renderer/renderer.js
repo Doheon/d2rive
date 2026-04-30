@@ -22,7 +22,7 @@ function render() {
 function renderMounts() {
   const el = document.getElementById('mounts-list')
   if (!state.activeMounts.length) {
-    el.innerHTML = '<div class="empty-hint">No active mounts</div>'
+    el.innerHTML = '<div class="empty-hint">No active sessions</div>'
     return
   }
   el.innerHTML = state.activeMounts.map(m => {
@@ -54,7 +54,7 @@ function renderSaved() {
   el.innerHTML = state.savedDrives.map(d => `
     <div class="saved-row">
       <span class="saved-name" title="${d.key}">${d.name}</span>
-      <button class="btn-small" onclick="onMountSaved('${d.key}')">Mount</button>
+      <button class="btn-small" onclick="onWatchSaved('${d.key}')">Watch</button>
       <button class="btn-danger" onclick="onForget('${d.name}')">Remove</button>
     </div>`).join('')
 }
@@ -73,7 +73,6 @@ document.getElementById('btn-share').addEventListener('click', async () => {
   if (r.error) { alert('Share failed: ' + r.error); return }
   state.pendingShareKey = r.key
   document.getElementById('share-key-text').textContent = r.key
-  document.getElementById('save-name-input').value = ''
   document.getElementById('share-card').classList.remove('hidden')
   await refresh()
 })
@@ -86,26 +85,30 @@ document.getElementById('btn-copy-key').addEventListener('click', () => {
   })
 })
 
-
-// ── Mount ─────────────────────────────────────────────────────────────────────
+// ── Watch ─────────────────────────────────────────────────────────────────────
 
 document.getElementById('btn-pick-folder').addEventListener('click', async () => {
   const result = await api.pickFolder()
   if (result.cancelled) return
   state.mountSelectedPath = result.path
   document.getElementById('mount-path-label').textContent = result.path.replace(/^\/Users\/[^/]+/, '~')
-  updateConnectBtn()
+  updateWatchBtns()
 })
 
-document.getElementById('key-input').addEventListener('input', updateConnectBtn)
+document.getElementById('key-input').addEventListener('input', updateWatchBtns)
+document.getElementById('save-name-input').addEventListener('input', updateWatchBtns)
 
-function updateConnectBtn() {
+function updateWatchBtns() {
   const key = document.getElementById('key-input').value.trim()
-  document.getElementById('btn-connect').disabled = !/^[0-9a-f]{64}$/i.test(key) || !state.mountSelectedPath
+  const name = document.getElementById('save-name-input').value.trim()
+  const validKey = /^[0-9a-f]{64}$/i.test(key)
+  document.getElementById('btn-connect').disabled = !validKey || !state.mountSelectedPath
+  document.getElementById('btn-save-key').disabled = !validKey || !name
 }
 
 document.getElementById('btn-connect').addEventListener('click', async () => {
   const key = document.getElementById('key-input').value.trim()
+  const name = document.getElementById('save-name-input').value.trim()
   const mountpoint = state.mountSelectedPath
   if (!key || !mountpoint) return
 
@@ -124,10 +127,28 @@ document.getElementById('btn-connect').addEventListener('click', async () => {
     return
   }
 
+  if (name) await api.saveDrive(name, key)
+
   document.getElementById('key-input').value = ''
+  document.getElementById('save-name-input').value = ''
   document.getElementById('mount-path-label').textContent = 'No folder selected'
   state.mountSelectedPath = null
   msg.textContent = ''
+  updateWatchBtns()
+  await refresh()
+})
+
+document.getElementById('btn-save-key').addEventListener('click', async () => {
+  const key = document.getElementById('key-input').value.trim()
+  const name = document.getElementById('save-name-input').value.trim()
+  if (!key || !name) return
+  const r = await api.saveDrive(name, key)
+  if (r.error) { alert('Save failed: ' + r.error); return }
+  document.getElementById('save-name-input').value = ''
+  document.getElementById('key-input').value = ''
+  state.mountSelectedPath = null
+  document.getElementById('mount-path-label').textContent = 'No folder selected'
+  updateWatchBtns()
   await refresh()
 })
 
@@ -138,14 +159,14 @@ function friendlyError(err) {
   return err
 }
 
-// ── Active mounts ─────────────────────────────────────────────────────────────
+// ── Active sessions ───────────────────────────────────────────────────────────
 
 function onStop(mountpoint) {
   api.stopWatch(mountpoint).then(() => refresh())
 }
 
 async function onSaveMount(mountpoint, key) {
-  const name = prompt('Save drive as:', mountpoint.split('/').pop() || '')
+  const name = await showNameDialog(mountpoint.split('/').pop() || '')
   if (!name) return
   const r = await api.saveDrive(name, key)
   if (r.error) { alert('Save failed: ' + r.error); return }
@@ -154,7 +175,7 @@ async function onSaveMount(mountpoint, key) {
 
 // ── Saved drives ──────────────────────────────────────────────────────────────
 
-async function onMountSaved(key) {
+async function onWatchSaved(key) {
   const result = await api.pickFolder()
   if (result.cancelled) return
   const r = await api.watchDrive(key, result.path)
@@ -166,6 +187,39 @@ async function onForget(name) {
   if (!confirm(`Remove saved drive "${name}"?`)) return
   await api.forgetDrive(name)
   await refresh()
+}
+
+// ── Name dialog ───────────────────────────────────────────────────────────────
+
+function showNameDialog(defaultName) {
+  return new Promise(resolve => {
+    const overlay = document.getElementById('name-dialog')
+    const input = document.getElementById('name-dialog-input')
+    input.value = defaultName
+    overlay.classList.remove('hidden')
+    input.focus()
+    input.select()
+
+    const btnOk = document.getElementById('name-dialog-ok')
+    const btnCancel = document.getElementById('name-dialog-cancel')
+
+    function finish(val) {
+      overlay.classList.add('hidden')
+      btnOk.removeEventListener('click', onOk)
+      btnCancel.removeEventListener('click', onCancel)
+      input.onkeydown = null
+      resolve(val)
+    }
+    function onOk() { finish(input.value.trim() || null) }
+    function onCancel() { finish(null) }
+
+    btnOk.addEventListener('click', onOk)
+    btnCancel.addEventListener('click', onCancel)
+    input.onkeydown = e => {
+      if (e.key === 'Enter') onOk()
+      if (e.key === 'Escape') onCancel()
+    }
+  })
 }
 
 // ── Push events ───────────────────────────────────────────────────────────────
