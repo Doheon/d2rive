@@ -1,17 +1,9 @@
 # d2rive
 
-P2P remote folder mounting over [Hyperdrive](https://github.com/holepunchto/hyperdrive). Mount a remote folder as a local filesystem via macFUSE — no servers, no accounts.
+P2P folder sync over [Autobase](https://github.com/holepunchto/autobase) — share or sync folders between machines with no servers, no accounts, and no FUSE required.
 
 ## Requirements
 
-**macOS**
-- [macFUSE](https://osxfuse.github.io/) 4.x or later
-
-**Linux**
-- libfuse2: `sudo apt-get install libfuse2` (Ubuntu/Debian) or `sudo dnf install fuse-libs` (Fedora)
-- May require adding your user to the `fuse` group: `sudo usermod -aG fuse $USER`
-
-**Both**
 - Node.js 18+
 
 ## Install
@@ -21,8 +13,6 @@ git clone https://github.com/Doheon/d2rive.git
 cd d2rive
 npm install
 ```
-
-`npm install` automatically patches fuse-native for macOS arm64 (Apple Silicon).
 
 To use the `d2rive` command globally:
 
@@ -34,33 +24,23 @@ npm link
 
 ## GUI (menubar app)
 
-A macOS menu bar app is available in the `app/` directory:
+A macOS/Linux menu bar app is available in the `app/` directory:
 
 ```sh
 cd app
 npm install
-npm run rebuild
 npm start
 ```
 
-- `npm run rebuild` — rebuilds native addons for Electron (required once after install)
-- `npm start` — launches the menu bar app
-
-To run from anywhere after linking:
-
-```sh
-cd app
-npm link
-d2rive-app
-```
+Click the tray icon to open the panel. You can share folders, watch remote drives, save drive keys, and manage active sessions — all without touching the terminal.
 
 ---
 
 ## Usage
 
-### Share a local folder
+### Share a folder (read-only)
 
-Share a folder so others can mount it:
+Others can watch your folder but cannot edit files:
 
 ```sh
 d2rive share <folder>
@@ -68,53 +48,58 @@ d2rive share <folder>
 
 ```
 $ d2rive share ~/projects/myapp
-Synced: +42 changed:0 -0
-Drive key: a1b2c3d4...
-Others can mount with: d2rive mount a1b2c3d4... <mountpoint>
-Watching ~/projects/myapp for changes...
-Running... Press Ctrl+C to stop.
+Sync key: a1b2c3d4e5f6...
+Others can join with: d2rive watch a1b2c3d4... <folder>
+Initial sync: ↑12 file(s)
+Running... (read-only)
 ```
 
-The folder is watched for changes — edits are synced to connected peers in real time.
+Share a folder and allow others to edit files too:
+
+```sh
+d2rive share --write <folder>
+```
+
+Both modes are powered by the same Autobase protocol. The key can be used with `d2rive watch` regardless of mode.
 
 ---
 
-### Mount a remote drive
+### Watch a remote folder
+
+Sync a remote folder to a local path and keep it up to date:
 
 ```sh
-d2rive mount <key> <mountpoint>
+d2rive watch <key|name> <local-folder>
 ```
 
 ```sh
-d2rive mount a1b2c3d4... ~/mnt
+d2rive watch a1b2c3d4... ~/synced
 ```
 
-The remote folder appears at `~/mnt`. The mount is **read-only** — the drive is owned by the sharer and only they can write to it.
+- If the share is **read-only**, local files are synced from the remote and you cannot push changes back.
+- If the share is **writable**, you can edit files locally and changes propagate to all peers.
 
-Server-side changes are reflected on the client within ~2 seconds automatically. If the peer goes offline, cached files remain accessible and the client reconnects automatically when the server comes back online.
+The session stays active, syncing changes in real time. If the peer goes offline, the process exits after 30 seconds.
 
 ---
 
-### Create an empty drive
+### Bidirectional sync (explicit)
 
-Create a new empty drive and mount it locally:
-
-```sh
-d2rive create <mountpoint>
-```
+These are aliases for `share --write` and `watch`:
 
 ```sh
-d2rive create ~/mnt
+d2rive sync-create <folder>          # start a writable sync session
+d2rive sync-join <key|name> <folder> # join an existing sync session
 ```
-
-Prints a key others can use to mount the same drive.
 
 ---
 
-### Unmount
+### One-time download
+
+Download all files from a drive once, then exit:
 
 ```sh
-d2rive unmount <mountpoint>
+d2rive sync <key|name> <local-folder>
 ```
 
 ---
@@ -122,23 +107,11 @@ d2rive unmount <mountpoint>
 ### Download a single file
 
 ```sh
-d2rive pull <key> <remote-path> <local-path>
+d2rive pull <key|name> <remote-path> <local-path>
 ```
 
 ```sh
 d2rive pull a1b2c3d4... /README.md ./README.md
-```
-
----
-
-### Download all files
-
-```sh
-d2rive sync <key|name> <local-folder>
-```
-
-```sh
-d2rive sync a1b2c3d4... ./local-copy
 ```
 
 ---
@@ -169,16 +142,15 @@ d2rive forget <name>          # remove a saved name
 ```
 
 ```sh
-d2rive save myserver a1b2c3d4...
-d2rive mount myserver ~/mnt
-d2rive sync myserver ./backup
+d2rive save work a1b2c3d4...
+d2rive watch work ~/work
 ```
 
 ---
 
 ## Cache
 
-Drive data is cached locally at `~/.d2rive/<key>/`.
+Drive data is cached locally at `~/.d2rive/`.
 
 ```sh
 d2rive cache info             # show size and last-access age per drive
@@ -199,7 +171,7 @@ node_modules
 dist
 ```
 
-Bare names like `node_modules` automatically match both the entry itself and everything inside it.
+Bare names like `node_modules` match both the entry and everything inside it.
 
 ---
 
