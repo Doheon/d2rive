@@ -30,9 +30,7 @@ async function setupDrive(key) {
 
   const swarm = new Hyperswarm()
   let wasDisconnected = false
-  let disconnectTimer = null
   swarm.on('connection', conn => {
-    if (disconnectTimer) { clearTimeout(disconnectTimer); disconnectTimer = null }
     if (wasDisconnected) {
       console.log('\nReconnected to peer.')
       wasDisconnected = false
@@ -42,7 +40,6 @@ async function setupDrive(key) {
       if (swarm.connections.size === 0) {
         wasDisconnected = true
         console.log('\nLost connection to all peers. Reconnecting...')
-        disconnectTimer = setTimeout(() => process.exit(0), 30000)
       }
     })
   })
@@ -98,6 +95,16 @@ export async function watchDrive(keyHex, localFolder, { clean = false } = {}) {
   const key = b4a.from(keyHex, 'hex')
   const { drive, store, swarm } = await setupDrive(key)
   await connectToPeers(drive, swarm)
+
+  // Exit if the server stays unreachable for 2 minutes (sharer stopped)
+  let disconnectTimer = null
+  swarm.on('connection', conn => {
+    if (disconnectTimer) { clearTimeout(disconnectTimer); disconnectTimer = null }
+    conn.on('close', () => {
+      if (swarm.connections.size === 0)
+        disconnectTimer = setTimeout(() => process.exit(0), 120000)
+    })
+  })
 
   const configBuf = await drive.get('/.d2rive-config').catch(() => null)
   const config = configBuf ? JSON.parse(configBuf.toString()) : {}
