@@ -32,6 +32,30 @@ npm link
 
 ---
 
+## GUI (menubar app)
+
+A macOS menu bar app is available in the `app/` directory:
+
+```sh
+cd app
+npm install
+npm run rebuild
+npm start
+```
+
+- `npm run rebuild` — rebuilds native addons for Electron (required once after install)
+- `npm start` — launches the menu bar app
+
+To run from anywhere after linking:
+
+```sh
+cd app
+npm link
+d2rive-app
+```
+
+---
+
 ## Usage
 
 ### Share a local folder
