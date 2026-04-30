@@ -42,6 +42,51 @@ function makeCleanup(child, mountpoint) {
   })
 }
 
+function makeCleanupByPid(pid, mountpoint) {
+  return () => new Promise(res => {
+    try { process.kill(pid, 'SIGTERM') } catch { forceUnmount(mountpoint); return res() }
+    const timer = setTimeout(() => {
+      try { process.kill(pid, 'SIGKILL') } catch {}
+      forceUnmount(mountpoint)
+      res()
+    }, 3000)
+    const check = setInterval(() => {
+      try { process.kill(pid, 0) } catch {
+        clearInterval(check); clearTimeout(timer); res()
+      }
+    }, 300)
+  })
+}
+
+function discoverMounts() {
+  try {
+    const output = execSync('ps aux', { encoding: 'utf8' })
+    for (const line of output.split('\n')) {
+      if (!line.includes('d2rive.js')) continue
+      const parts = line.trim().split(/\s+/)
+      const pid = parseInt(parts[1])
+      const cmdIdx = parts.findIndex(p => p.endsWith('d2rive.js'))
+      if (cmdIdx < 0) continue
+      const cmd = parts[cmdIdx + 1]
+
+      if (cmd === 'mount') {
+        const key = parts[cmdIdx + 2]
+        const mountpoint = parts[cmdIdx + 3]
+        if (!key || !mountpoint || !/^[0-9a-f]{64}$/i.test(key)) continue
+        if (mounts.getAllMounts().find(m => m.mountpoint === mountpoint)) continue
+        mounts.addMount({ mountpoint, key, type: 'mount', status: 'connected',
+          cleanup: makeCleanupByPid(pid, mountpoint) })
+      } else if (cmd === 'share') {
+        const folderPath = parts[cmdIdx + 2]
+        if (!folderPath) continue
+        if (mounts.getAllMounts().find(m => m.mountpoint === folderPath)) continue
+        mounts.addMount({ mountpoint: folderPath, key: '', type: 'share', status: 'connected',
+          cleanup: makeCleanupByPid(pid, folderPath) })
+      }
+    }
+  } catch {}
+}
+
 let drivesLib
 async function loadLibs() {
   drivesLib = await import(path.resolve(__dirname, '../../src/drives.js'))
@@ -82,7 +127,7 @@ function createTray() {
   const icon = nativeImage.createFromPath(path.join(__dirname, '../assets/trayTemplate.png'))
   tray = new Tray(icon)
   tray.setToolTip('d2rive')
-  tray.on('click', (_, bounds) => toggleWindow(bounds))
+  tray.on('click', (_, bounds) => { discoverMounts(); toggleWindow(bounds) })
 }
 
 function createWindow() {
@@ -145,6 +190,7 @@ app.whenReady().then(async () => {
   if (app.dock) app.dock.hide()
   createTray()
   createWindow()
+  discoverMounts()
 
   app.on('before-quit', async (e) => {
     e.preventDefault()
