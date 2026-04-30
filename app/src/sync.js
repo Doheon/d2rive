@@ -6,10 +6,35 @@ import b4a from 'b4a'
 import { createHash } from 'crypto'
 import { homedir } from 'os'
 import { join, dirname, relative } from 'path'
-import { mkdir, readdir, readFile, writeFile, stat, utimes, rm } from 'fs/promises'
+import { mkdir, readdir, readFile, writeFile, rename, stat, utimes, rm } from 'fs/promises'
 import { watch as fsWatch } from 'fs'
+import picomatch from 'picomatch'
 
-const CHUNK_SIZE = 512 * 1024 // 512 KB per Hypercore block
+const CHUNK_SIZE = 512 * 1024
+
+// ── Ignore helpers ────────────────────────────────────────────────────────────
+
+const ALWAYS_IGNORE = new Set(['.git', '.d2riveignore'])
+
+async function loadIgnorePatterns(folderPath) {
+  try {
+    const raw = await readFile(join(folderPath, '.d2riveignore'), 'utf-8')
+    return raw.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'))
+  } catch {
+    return []
+  }
+}
+
+function makeIsIgnored(patterns = []) {
+  const names = new Set([...ALWAYS_IGNORE, ...patterns.filter(p => !/[*?/]/.test(p))])
+  const globs = patterns.filter(p => /[*?/]/.test(p))
+  const matchGlob = globs.length ? picomatch(globs, { dot: true }) : () => false
+  return (relPath) => {
+    const parts = relPath.replace(/^\//, '').split('/')
+    if (parts.some(p => names.has(p))) return true
+    return matchGlob(relPath.replace(/^\//, ''))
+  }
+}
 
 // ── View / apply ──────────────────────────────────────────────────────────────
 
@@ -79,10 +104,10 @@ async function readChunked(store, coreKey, startSeq, numChunks) {
 
 // ── File sync helpers ─────────────────────────────────────────────────────────
 
-async function syncViewToLocal(view, store, localFolder, writingFiles, log) {
+async function syncViewToLocal(view, store, localFolder, writingFiles, log, isIgnored) {
   for await (const { key: filePath, value } of view.createReadStream()) {
-    // Skip internal config entries (no coreKey means not a file)
     if (!value.coreKey) continue
+    if (isIgnored && isIgnored(filePath)) continue
     const localPath = join(localFolder, filePath)
     try {
       const s = await stat(localPath)
@@ -92,21 +117,28 @@ async function syncViewToLocal(view, store, localFolder, writingFiles, log) {
     try {
       const data = await readChunked(store, value.coreKey, value.startSeq, value.numChunks)
       await mkdir(dirname(localPath), { recursive: true })
-      await writeFile(localPath, data)
-      await utimes(localPath, new Date(value.mtime), new Date(value.mtime))
+      // Atomic write: write to tmp then rename to avoid partial reads
+      const tmpPath = localPath + '.d2rive-tmp'
+      await writeFile(tmpPath, data)
+      await utimes(tmpPath, new Date(value.mtime), new Date(value.mtime))
+      await rename(tmpPath, localPath)
       log(`  ↓ ${filePath}`)
-    } catch {}
+    } catch (err) {
+      // Clean up tmp file on failure
+      try { await rm(localPath + '.d2rive-tmp', { force: true }) } catch {}
+    }
     setTimeout(() => writingFiles.delete(filePath), 1000)
   }
 }
 
-async function uploadLocalFiles(folderPath, base, dataCore, view, log) {
+async function uploadLocalFiles(folderPath, base, dataCore, view, log, isIgnored) {
   let count = 0
   async function scan(dir) {
     for (const e of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
       const abs = join(dir, e.name)
-      if (e.isDirectory()) { await scan(abs); continue }
       const relPath = '/' + relative(folderPath, abs).replace(/\\/g, '/')
+      if (isIgnored && isIgnored(relPath)) continue
+      if (e.isDirectory()) { await scan(abs); continue }
       const s = await stat(abs).catch(() => null); if (!s) continue
       const cur = await view.get(relPath).catch(() => null)
       if (cur && Math.abs(cur.value.mtime - s.mtimeMs) < 50) continue
@@ -124,12 +156,13 @@ async function uploadLocalFiles(folderPath, base, dataCore, view, log) {
   return count
 }
 
-function startLocalWatcher(folderPath, base, dataCore, view, writingFiles, log) {
+function startLocalWatcher(folderPath, base, dataCore, view, writingFiles, log, isIgnored) {
   const debounce = new Map()
   const watcher = fsWatch(folderPath, { recursive: true }, (_, filename) => {
     if (!filename) return
     const relPath = '/' + filename.replace(/\\/g, '/')
     if (writingFiles.has(relPath)) return
+    if (isIgnored && isIgnored(relPath)) return
     clearTimeout(debounce.get(relPath))
     debounce.set(relPath, setTimeout(async () => {
       debounce.delete(relPath)
@@ -177,6 +210,7 @@ export async function createSync(folderPath, { writable = true, onLog, onStatus 
   log(`Sync key: ${key}`)
   log(`Others can join with: d2rive sync-join ${key} <folder>`)
 
+  const isIgnored = makeIsIgnored(await loadIgnorePatterns(folderPath))
   const writingFiles = new Set()
   const swarm = new Hyperswarm()
   let wasDisconnected = false
@@ -193,11 +227,19 @@ export async function createSync(folderPath, { writable = true, onLog, onStatus 
   swarm.join(base.discoveryKey, { server: true, client: true })
   if (onStatus) onStatus('connected')
 
-  const count = await uploadLocalFiles(folderPath, base, dataCore, base.view, log)
+  const count = await uploadLocalFiles(folderPath, base, dataCore, base.view, log, isIgnored)
   log(`Initial sync: ↑${count} file(s)`)
 
-  base.on('update', () => syncViewToLocal(base.view, store, folderPath, writingFiles, log).catch(() => {}))
-  const watcher = startLocalWatcher(folderPath, base, dataCore, base.view, writingFiles, log)
+  // Serialized sync: only one syncViewToLocal runs at a time
+  let syncing = false; let needsSync = false
+  const runSync = async () => {
+    if (syncing) { needsSync = true; return }
+    syncing = true
+    do { needsSync = false; await syncViewToLocal(base.view, store, folderPath, writingFiles, log, isIgnored).catch(() => {}) } while (needsSync)
+    syncing = false
+  }
+  base.on('update', () => runSync())
+  const watcher = startLocalWatcher(folderPath, base, dataCore, base.view, writingFiles, log, isIgnored)
 
   log(`Running... (${writable ? 'writable' : 'read-only'})`)
 
@@ -281,19 +323,26 @@ export async function joinSync(keyHex, localFolder, { onLog, onStatus, onDisconn
 
   if (onStatus) onStatus('connected')
 
+  const isIgnored = makeIsIgnored(await loadIgnorePatterns(localFolder))
+
   log('Initial sync...')
-  await syncViewToLocal(base.view, store, localFolder, writingFiles, log)
+  await syncViewToLocal(base.view, store, localFolder, writingFiles, log, isIgnored)
 
   let watcher = null
   if (base.writable) {
-    const count = await uploadLocalFiles(localFolder, base, dataCore, base.view, log)
+    const count = await uploadLocalFiles(localFolder, base, dataCore, base.view, log, isIgnored)
     log(`Initial sync: ↑${count} file(s)`)
-    watcher = startLocalWatcher(localFolder, base, dataCore, base.view, writingFiles, log)
+    watcher = startLocalWatcher(localFolder, base, dataCore, base.view, writingFiles, log, isIgnored)
   }
 
-  base.on('update', () => {
-    syncViewToLocal(base.view, store, localFolder, writingFiles, log).catch(() => {})
-  })
+  let syncing = false; let needsSync = false
+  const runSync = async () => {
+    if (syncing) { needsSync = true; return }
+    syncing = true
+    do { needsSync = false; await syncViewToLocal(base.view, store, localFolder, writingFiles, log, isIgnored).catch(() => {}) } while (needsSync)
+    syncing = false
+  }
+  base.on('update', () => runSync())
 
   log(`Running... (${base.writable ? 'writable' : 'read-only'})`)
 
