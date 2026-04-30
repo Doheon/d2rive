@@ -30,12 +30,16 @@ function renderMounts() {
     const label = m.mountpoint.replace(/^\/Users\/[^/]+/, '~')
     const badge = m.type === 'share' ? 'sharing' : 'mount'
     const mp = m.mountpoint.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+    const saveBtn = m.type === 'mount' && m.key
+      ? `<button class="btn-small" onclick="onSaveMount('${mp}', '${m.key}')">Save</button>`
+      : ''
     return `
       <div class="mount-row">
         <div class="mount-dot ${dotClass}"></div>
         <span class="mount-path" title="${m.mountpoint}">${label}</span>
         <span class="mount-type-badge">${badge}</span>
         <button class="btn-small" onclick="api.openInFinder('${mp}')">Open</button>
+        ${saveBtn}
         <button class="btn-danger" onclick="onUnmount('${mp}')">Unmount</button>
       </div>`
   }).join('')
@@ -82,17 +86,6 @@ document.getElementById('btn-copy-key').addEventListener('click', () => {
   })
 })
 
-document.getElementById('btn-save-shared-key').addEventListener('click', async () => {
-  const name = document.getElementById('save-name-input').value.trim()
-  if (!name) { document.getElementById('save-name-input').focus(); return }
-  const r = await api.saveDrive(name, state.pendingShareKey)
-  if (r.error) { alert('Save failed: ' + r.error); return }
-  document.getElementById('save-name-input').value = ''
-  const btn = document.getElementById('btn-save-shared-key')
-  btn.textContent = 'Saved!'
-  setTimeout(() => { btn.textContent = 'Save' }, 1500)
-  await refresh()
-})
 
 // ── Mount ─────────────────────────────────────────────────────────────────────
 
@@ -150,6 +143,14 @@ function friendlyError(err) {
 
 function onUnmount(mountpoint) {
   api.unmount(mountpoint).then(() => refresh())
+}
+
+async function onSaveMount(mountpoint, key) {
+  const name = prompt('Save drive as:', mountpoint.split('/').pop() || '')
+  if (!name) return
+  const r = await api.saveDrive(name, key)
+  if (r.error) { alert('Save failed: ' + r.error); return }
+  await refresh()
 }
 
 // ── Saved drives ──────────────────────────────────────────────────────────────

@@ -172,23 +172,6 @@ section {
   white-space: nowrap;
 }
 
-.save-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.save-name-input {
-  flex: 1;
-  padding: 4px 7px;
-  border: 1px solid #c7e0ff;
-  border-radius: 5px;
-  font-size: 12px;
-  font-family: inherit;
-  background: #fff;
-  outline: none;
-}
-.save-name-input:focus { border-color: #007aff; }
 
 /* Mount section */
 #key-input {
