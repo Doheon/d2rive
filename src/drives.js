@@ -41,7 +41,7 @@ export async function listDrives() {
 }
 
 export async function resolveKey(nameOrKey) {
-  if (/^[0-9a-f]{64}$/i.test(nameOrKey)) return nameOrKey
+  if (/^(?:sync:)?[0-9a-f]{64}$/i.test(nameOrKey)) return nameOrKey
   const drives = await readDrives()
   const entry = drives[nameOrKey]
   if (!entry) throw new Error(`Unknown drive name: "${nameOrKey}"`)

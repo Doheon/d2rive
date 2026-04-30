@@ -31,8 +31,13 @@ const commands = {
     const [keyOrName, localFolder] = cleanArgs
     if (!keyOrName || !localFolder) usage()
     const key = await resolveKey(keyOrName)
-    const { cleanup } = await watchDrive(key, localFolder, { clean })
-    onExit(cleanup)
+    if (key.startsWith('sync:')) {
+      const { cleanup } = await joinSync(key.slice(5), localFolder)
+      onExit(cleanup)
+    } else {
+      const { cleanup } = await watchDrive(key, localFolder, { clean })
+      onExit(cleanup)
+    }
   },
 
   async pull() {
@@ -91,8 +96,8 @@ const commands = {
   async save() {
     const [name, key] = args
     if (!name || !key) usage()
-    if (!/^[0-9a-f]{64}$/i.test(key)) {
-      console.error('Invalid key: must be a 64-character hex string')
+    if (!/^(?:sync:)?[0-9a-f]{64}$/i.test(key)) {
+      console.error('Invalid key: must be a 64-character hex string (or sync:<hex>)')
       process.exit(1)
     }
     await saveDrive(name, key)
@@ -127,7 +132,8 @@ const commands = {
     const [keyOrName, localFolder] = cleanArgs
     if (!keyOrName || !localFolder) usage()
     const key = await resolveKey(keyOrName)
-    const { cleanup } = await joinSync(key, localFolder)
+    const rawKey = key.startsWith('sync:') ? key.slice(5) : key
+    const { cleanup } = await joinSync(rawKey, localFolder)
     onExit(cleanup)
   }
 }

@@ -5,8 +5,6 @@ contextBridge.exposeInMainWorld('api', {
   pickFolder:        ()                         => ipcRenderer.invoke('dialog:pick-folder'),
   shareFolder:       (folderPath, writable)      => ipcRenderer.invoke('drive:share-folder', { folderPath, writable }),
   watchDrive:        (keyHex, localFolder, clean) => ipcRenderer.invoke('drive:watch', { keyHex, localFolder, clean }),
-  syncCreate:        (folderPath)                => ipcRenderer.invoke('drive:sync-create', { folderPath }),
-  syncJoin:          (keyHex, localFolder, clean) => ipcRenderer.invoke('drive:sync-join', { keyHex, localFolder, clean }),
   stopWatch:         (mountpoint)               => ipcRenderer.invoke('drive:stop', { mountpoint }),
   listMounts:        ()                         => ipcRenderer.invoke('drive:list-mounts'),
   listSaved:         ()                         => ipcRenderer.invoke('drive:list-saved'),
