@@ -1,7 +1,12 @@
 {
   "name": "d2rive-app",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "d2rive menubar app",
+  "author": "Doheon",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Doheon/d2rive"
+  },
   "main": "main/index.js",
   "type": "commonjs",
   "scripts": {
@@ -43,7 +48,8 @@
     "mac": {
       "category": "public.app-category.utilities",
       "target": [
-        { "target": "dmg", "arch": ["universal"] }
+        { "target": "dmg", "arch": ["arm64"] },
+        { "target": "dmg", "arch": ["x64"] }
       ],
       "icon": "assets/icon.icns"
     },

@@ -110,12 +110,12 @@ def main():
     app_icon(512).save(png_path)
     print(f'icon.png  → {png_path}')
 
-    # Windows ICO (multi-size embedded)
-    ico_sizes = [16, 32, 48, 64, 128, 256]
-    frames = [app_icon(s).convert('RGBA') for s in ico_sizes]
+    # Windows ICO — start from 256x256, PIL generates smaller sizes from it
     ico_path = os.path.join(ASSETS, 'icon.ico')
-    frames[0].save(ico_path, format='ICO', append_images=frames[1:],
-                   sizes=[(s, s) for s in ico_sizes])
+    app_icon(256).convert('RGBA').save(
+        ico_path, format='ICO',
+        sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
+    )
     print(f'icon.ico  → {ico_path}')
 
     # Tray template images (macOS monochrome)
