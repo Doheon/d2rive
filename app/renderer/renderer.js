@@ -140,21 +140,27 @@ document.getElementById('btn-connect').addEventListener('click', async () => {
   const mountpoint = state.mountSelectedPath
   if (!key || !mountpoint) return
 
+  const btn = document.getElementById('btn-connect')
+  const msg = document.getElementById('mount-status-msg')
+
   // First click: check if folder has existing files
   if (!state.mountNeedsClean) {
+    btn.disabled = true
+    btn.innerHTML = '<span class="spinner"></span>Checking…'
     const info = await api.folderInfo(mountpoint)
     if (info.hasFiles) {
       state.mountNeedsClean = true
+      btn.disabled = false
+      btn.textContent = 'Watch (overwrite)'
       const w = document.getElementById('mount-warning')
       w.textContent = `⚠ ${info.count} existing file(s) will be deleted. Click again to confirm.`
       w.classList.remove('hidden')
-      document.getElementById('btn-connect').textContent = 'Watch (overwrite)'
       return
     }
+    btn.disabled = false
+    btn.textContent = 'Watch'
   }
 
-  const btn = document.getElementById('btn-connect')
-  const msg = document.getElementById('mount-status-msg')
   btn.disabled = true
   btn.innerHTML = '<span class="spinner"></span>Watching…'
   msg.textContent = ''
@@ -229,26 +235,37 @@ async function onForget(name) {
 
 // ── Add saved drive ───────────────────────────────────────────────────────────
 
+let savedAddFolder = null
+
+function resetSavedAddCard() {
+  savedAddFolder = null
+  document.getElementById('saved-add-name').value = ''
+  document.getElementById('saved-add-key').value = ''
+  document.getElementById('saved-add-folder-label').textContent = 'No folder (will ask when watching)'
+  document.getElementById('saved-add-card').classList.add('hidden')
+}
+
 document.getElementById('btn-saved-add').addEventListener('click', () => {
   document.getElementById('saved-add-card').classList.remove('hidden')
   document.getElementById('saved-add-name').focus()
 })
 
-document.getElementById('btn-saved-add-cancel').addEventListener('click', () => {
-  document.getElementById('saved-add-card').classList.add('hidden')
-  document.getElementById('saved-add-name').value = ''
-  document.getElementById('saved-add-key').value = ''
+document.getElementById('btn-saved-add-folder').addEventListener('click', async () => {
+  const result = await api.pickFolder()
+  if (result.cancelled) return
+  savedAddFolder = result.path
+  document.getElementById('saved-add-folder-label').textContent = result.path.replace(/^\/Users\/[^/]+/, '~')
 })
+
+document.getElementById('btn-saved-add-cancel').addEventListener('click', resetSavedAddCard)
 
 document.getElementById('btn-saved-add-save').addEventListener('click', async () => {
   const name = document.getElementById('saved-add-name').value.trim()
   const key  = document.getElementById('saved-add-key').value.trim()
   if (!name || !/^[0-9a-f]{64}$/i.test(key)) return
-  const r = await api.saveDrive(name, key, null)
+  const r = await api.saveDrive(name, key, savedAddFolder)
   if (r.error) { alert('Save failed: ' + r.error); return }
-  document.getElementById('saved-add-card').classList.add('hidden')
-  document.getElementById('saved-add-name').value = ''
-  document.getElementById('saved-add-key').value = ''
+  resetSavedAddCard()
   await refresh()
 })
 
