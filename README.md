@@ -2,7 +2,17 @@
 
 P2P folder sync over [Autobase](https://github.com/holepunchto/autobase) — share or sync folders between machines with no servers, no accounts, and no FUSE required.
 
-## Requirements
+## Download
+
+[![Latest Release](https://img.shields.io/github/v/release/Doheon/d2rive?style=flat-square&label=Latest%20Release&color=1a6fdb)](https://github.com/Doheon/d2rive/releases/latest)
+
+macOS (Apple Silicon / Intel), Linux, Windows — download the installer for your platform from the link above.
+
+<img src="docs/screenshot.png" width="400" alt="d2rive menubar app">
+
+---
+
+## Requirements (CLI / dev)
 
 - Node.js 18+
 
