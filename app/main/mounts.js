@@ -36,4 +36,6 @@ async function cleanupAll() {
   for (const [mp] of sessions) await removeMount(mp)
 }
 
-module.exports = { setWindow, addMount, removeMount, setStatus, getAllMounts, cleanupAll }
+function getWindow() { return _win }
+
+module.exports = { setWindow, getWindow, addMount, removeMount, setStatus, getAllMounts, cleanupAll }
