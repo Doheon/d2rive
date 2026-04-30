@@ -8,12 +8,12 @@ import { join, dirname, relative } from 'path'
 import { mkdir, readdir, readFile, writeFile, stat, utimes } from 'fs/promises'
 import { watch as fsWatch } from 'fs'
 
-const MAX_SIZE = 4 * 1024 * 1024
+const CHUNK_SIZE = 512 * 1024 // 512 KB per Hypercore block
 
 // ── View / apply ──────────────────────────────────────────────────────────────
 
 function openView(store) {
-  return new Hyperbee(store.get('files'), { keyEncoding: 'utf-8', valueEncoding: 'json' })
+  return new Hyperbee(store.get('meta'), { keyEncoding: 'utf-8', valueEncoding: 'json' })
 }
 
 async function apply(nodes, view, host) {
@@ -21,7 +21,6 @@ async function apply(nodes, view, host) {
     try {
       const op = JSON.parse(node.value.toString())
       if (op.type === 'add-writer') {
-        // Self-verification: block must be signed by the key being added
         if (b4a.equals(node.from.key, b4a.from(op.key, 'hex'))) {
           await host.ackWriter(node.from.key)
           await host.addWriter(node.from.key, { indexer: false })
@@ -31,7 +30,10 @@ async function apply(nodes, view, host) {
       if (op.type === 'put') {
         const cur = await view.get(op.path).catch(() => null)
         if (!cur || cur.value.mtime < op.mtime) {
-          await view.put(op.path, { mtime: op.mtime, data: op.data, size: op.size })
+          await view.put(op.path, {
+            mtime: op.mtime, size: op.size,
+            coreKey: op.coreKey, startSeq: op.startSeq, numChunks: op.numChunks
+          })
         }
       } else if (op.type === 'del') {
         const cur = await view.get(op.path).catch(() => null)
@@ -43,9 +45,33 @@ async function apply(nodes, view, host) {
   }
 }
 
+// ── Chunk helpers ─────────────────────────────────────────────────────────────
+
+async function appendChunked(dataCore, data) {
+  const chunks = []
+  for (let i = 0; i < data.length; i += CHUNK_SIZE) {
+    chunks.push(data.slice(i, i + CHUNK_SIZE))
+  }
+  if (chunks.length === 0) chunks.push(Buffer.alloc(0))
+  const startSeq = dataCore.length
+  for (const chunk of chunks) await dataCore.append(chunk)
+  return { startSeq, numChunks: chunks.length }
+}
+
+async function readChunked(store, coreKey, startSeq, numChunks) {
+  const core = store.get({ key: b4a.from(coreKey, 'hex') })
+  await core.ready()
+  const parts = []
+  for (let i = 0; i < numChunks; i++) {
+    const block = await core.get(startSeq + i, { timeout: 30000 })
+    parts.push(block)
+  }
+  return Buffer.concat(parts)
+}
+
 // ── File sync helpers ─────────────────────────────────────────────────────────
 
-async function syncViewToLocal(view, localFolder, writingFiles, log) {
+async function syncViewToLocal(view, store, localFolder, writingFiles, log) {
   for await (const { key: filePath, value } of view.createReadStream()) {
     const localPath = join(localFolder, filePath)
     try {
@@ -54,8 +80,9 @@ async function syncViewToLocal(view, localFolder, writingFiles, log) {
     } catch {}
     writingFiles.add(filePath)
     try {
+      const data = await readChunked(store, value.coreKey, value.startSeq, value.numChunks)
       await mkdir(dirname(localPath), { recursive: true })
-      await writeFile(localPath, Buffer.from(value.data, 'base64'))
+      await writeFile(localPath, data)
       await utimes(localPath, new Date(value.mtime), new Date(value.mtime))
       log(`  ↓ ${filePath}`)
     } catch {}
@@ -63,7 +90,7 @@ async function syncViewToLocal(view, localFolder, writingFiles, log) {
   }
 }
 
-async function uploadLocalFiles(folderPath, base, view, log) {
+async function uploadLocalFiles(folderPath, base, dataCore, view, log) {
   let count = 0
   async function scan(dir) {
     for (const e of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
@@ -74,11 +101,11 @@ async function uploadLocalFiles(folderPath, base, view, log) {
       const cur = await view.get(relPath).catch(() => null)
       if (cur && Math.abs(cur.value.mtime - s.mtimeMs) < 50) continue
       const data = await readFile(abs).catch(() => null); if (!data) continue
-      if (data.length > MAX_SIZE) { log(`Skipping ${relPath}: exceeds 4 MB`); continue }
+      const { startSeq, numChunks } = await appendChunked(dataCore, data)
       await base.append(JSON.stringify({
         type: 'put', path: relPath,
         mtime: s.mtimeMs, size: s.size,
-        data: data.toString('base64')
+        coreKey: dataCore.key.toString('hex'), startSeq, numChunks
       }))
       count++
     }
@@ -87,7 +114,7 @@ async function uploadLocalFiles(folderPath, base, view, log) {
   return count
 }
 
-function startLocalWatcher(folderPath, base, view, writingFiles, log) {
+function startLocalWatcher(folderPath, base, dataCore, view, writingFiles, log) {
   const debounce = new Map()
   const watcher = fsWatch(folderPath, { recursive: true }, (_, filename) => {
     if (!filename) return
@@ -102,11 +129,11 @@ function startLocalWatcher(folderPath, base, view, writingFiles, log) {
         const cur = await view.get(relPath).catch(() => null)
         if (cur && Math.abs(cur.value.mtime - s.mtimeMs) < 50 && cur.value.size === s.size) return
         const data = await readFile(absPath)
-        if (data.length > MAX_SIZE) { log(`Skipping ${relPath}: exceeds 4 MB`); return }
+        const { startSeq, numChunks } = await appendChunked(dataCore, data)
         await base.append(JSON.stringify({
           type: 'put', path: relPath,
           mtime: s.mtimeMs, size: s.size,
-          data: data.toString('base64')
+          coreKey: dataCore.key.toString('hex'), startSeq, numChunks
         }))
         log(`  ↑ ${relPath}`)
       } catch {
@@ -126,6 +153,9 @@ export async function createSync(folderPath, { onLog, onStatus } = {}) {
   const log = (t) => { console.log(t); if (onLog) onLog(t) }
   const storageDir = join(homedir(), '.d2rive', 'sync-' + Date.now())
   const store = new Corestore(storageDir)
+  const dataCore = store.get({ name: 'data' })
+  await dataCore.ready()
+
   const base = new Autobase(store, null, { open: openView, apply, optimistic: true })
   await base.ready()
 
@@ -149,15 +179,11 @@ export async function createSync(folderPath, { onLog, onStatus } = {}) {
   swarm.join(base.discoveryKey, { server: true, client: true })
   if (onStatus) onStatus('connected')
 
-  // Initial upload (local files → base)
-  const count = await uploadLocalFiles(folderPath, base, base.view, log)
+  const count = await uploadLocalFiles(folderPath, base, dataCore, base.view, log)
   log(`Initial sync: ↑${count} file(s)`)
 
-  // Watch view for remote changes
-  base.on('update', () => syncViewToLocal(base.view, folderPath, writingFiles, log).catch(() => {}))
-
-  // Watch local FS
-  const watcher = startLocalWatcher(folderPath, base, base.view, writingFiles, log)
+  base.on('update', () => syncViewToLocal(base.view, store, folderPath, writingFiles, log).catch(() => {}))
+  const watcher = startLocalWatcher(folderPath, base, dataCore, base.view, writingFiles, log)
 
   log(`Running... (syncing ${folderPath})`)
 
@@ -177,10 +203,12 @@ export async function joinSync(keyHex, localFolder, { onLog, onStatus } = {}) {
   const bootstrapKey = b4a.from(keyHex, 'hex')
   const storageDir = join(homedir(), '.d2rive', 'sync-' + keyHex.slice(0, 8) + '-' + Date.now())
   const store = new Corestore(storageDir)
+  const dataCore = store.get({ name: 'data' })
+  await dataCore.ready()
+
   const base = new Autobase(store, bootstrapKey, { open: openView, apply, optimistic: true })
   await base.ready()
 
-  // Announce ourselves as writer candidate
   await base.append(JSON.stringify({
     type: 'add-writer',
     key: base.local.key.toString('hex')
@@ -205,10 +233,7 @@ export async function joinSync(keyHex, localFolder, { onLog, onStatus } = {}) {
   log('Waiting to become writer...')
   if (!base.writable) {
     await new Promise((resolve) => {
-      const t = setTimeout(() => {
-        base.removeAllListeners('writable')
-        resolve()
-      }, 20000)
+      const t = setTimeout(() => { base.removeAllListeners('writable'); resolve() }, 20000)
       base.once('writable', () => { clearTimeout(t); resolve() })
     })
   }
@@ -216,23 +241,18 @@ export async function joinSync(keyHex, localFolder, { onLog, onStatus } = {}) {
   if (onStatus) onStatus('connected')
   await mkdir(localFolder, { recursive: true })
 
-  // Download view → local
   log('Initial sync...')
-  await syncViewToLocal(base.view, localFolder, writingFiles, log)
+  await syncViewToLocal(base.view, store, localFolder, writingFiles, log)
 
-  // Upload local → base
   if (base.writable) {
-    const count = await uploadLocalFiles(localFolder, base, base.view, log)
+    const count = await uploadLocalFiles(localFolder, base, dataCore, base.view, log)
     log(`Initial sync: ↑${count} file(s)`)
   }
 
-  // Watch view for remote changes
   base.on('update', () => {
-    syncViewToLocal(base.view, localFolder, writingFiles, log).catch(() => {})
+    syncViewToLocal(base.view, store, localFolder, writingFiles, log).catch(() => {})
   })
-
-  // Watch local FS
-  const watcher = startLocalWatcher(localFolder, base, base.view, writingFiles, log)
+  const watcher = startLocalWatcher(localFolder, base, dataCore, base.view, writingFiles, log)
 
   log(`Running... (syncing ${localFolder})`)
 
